@@ -36,6 +36,16 @@ Clone once, then run setup for your OS.
 
 Dry run (no installs or `.env` writes): add `--dry-run` on bash or `-DryRun` on PowerShell.
 
+**Termux (Android), inside this quick install:**
+
+- Install Termux from F-Droid or GitHub (the Play Store build is not the one to use).
+- Skip `setup.sh`. `sudo apt-get`, `/workspace/local-llm`, and `systemd` do not apply.
+- Clone into Termux `$HOME`. `/sdcard` is `noexec`.
+- On the built-in `setup-mission`, run `./scripts/sync-armory.sh --allow-offline`, `./scripts/detect-models.sh --slug setup-mission`, and `./scripts/start.sh`.
+- Inference: `pkg install llama-cpp` and a small 1B to 4B `Q4_K_M` model (`llama-server` on `:8080`), or an SSH/Tailscale tunnel of a remote `llama-server` onto `127.0.0.1:8080`. The 6.88 GB Inkling 2 Mini quant is too heavy for a phone.
+- Harness: `pkg install nodejs git`, then `npm install -g --ignore-scripts @earendil-works/pi-coding-agent` and `pi install npm:pi-agents`. `pi`, `pi-agents`, and Pi Durable run on Termux Node 24+ with Node's built-in `node:sqlite`.
+- Persistence: no `systemd`. Use `tmux` or `termux-services` (`runit`) plus `termux-wake-lock`. Android 12+ Phantom Process Killer can still stop background work.
+
 ## One-line deploy prompt (existing harness, no setup)
 
 Copy into any AI harness (Hermes, Pi, Grok Bot, Claude, Cursor, etc.) when you **do not** run `setup.sh`:
@@ -65,7 +75,7 @@ Interactive first-time bootstrap. Idempotent and safe to re-run (preserves exist
 |------|----------------|
 | 1. Harness detection | Detects Hermes, **Pi Coding Agent** (`pi`), Claude, Grok, Cursor (see [`harnesses/`](harnesses/README.md)). |
 | 2. Harness install (optional) | **Hermes:** `pip install --user hermes-agent`. **Pi:** Linux/macOS `curl -fsSL https://pi.dev/install.sh \| sh` then `pi install npm:pi-agents` (pulls durable sub-agents); Windows `irm https://pi.dev/install.ps1 \| iex` then `pi install npm:pi-agents`. |
-| 3. Local LLM (optional) | `llama-server` + Inkling 2 Mini `Inkling-2-Mini-AD-IQ1_S.gguf` (6.5 GB) on `127.0.0.1:8080`. Reuses `LOCAL_LLM_DIR` or `/workspace/local-llm` when weights exist (no re-download). |
+| 3. Local LLM (opt-in) | Detect a running server on `127.0.0.1:8080` (llama-server / Inkling), `:11434` (Ollama), or `:8000` (vLLM), or an installed model under `LOCAL_LLM_DIR`, `/workspace/local-llm`, `~/local-llm`, `~/.cache/llama.cpp`, common `*.gguf` paths, or Ollama manifests. If one is found, setup skips the download and prints the endpoint or path. If none is found, setup asks before **Inkling 2 Mini (6.5 GB AD IQ1_S quant)**. The prompt is `[y/N]` and the default is **No**. Nothing downloads unless you accept. `--non-interactive` without `--install-llm` declines. `--skip-llm` skips the step. Declining continues setup and states that API keys in `.env` or a remote inference endpoint are required, then moves on to API keys and squad bootstrap. |
 | 4. API keys (optional) | Masked prompts for `NVIDIA_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY` into gitignored `.env` (empty input keeps existing values; `chmod 600` on Unix). |
 | 5. Bootstrap | `sync-armory.sh --allow-offline`, `detect-models.sh`, `deploy-squad.sh`, `start.sh`. |
 
@@ -73,6 +83,7 @@ Interactive first-time bootstrap. Idempotent and safe to re-run (preserves exist
 |------|--------|
 | Dry run | `./scripts/setup.sh --dry-run` or `.\scripts\setup.ps1 -DryRun` |
 | CI / automation | `./scripts/setup.sh --non-interactive --skip-llm --harness cursor --mission-slug my-squad` |
+| Download Inkling in CI | Add `--install-llm` (or `-InstallLlm`). Without it, non-interactive setup declines the 6.5 GB quant. |
 | Skip bootstrap | `--skip-deploy` / `-SkipDeploy` |
 
 On **Windows Git Bash**, `setup.sh` delegates to `setup.ps1` when PowerShell is available (`SETUP_BASH_ONLY=1` forces bash-only).
@@ -89,6 +100,8 @@ Secrets never print to logs. See [`.env.example`](.env.example).
 | `llama.cpp` binary | Distro package or cmake build; binary `llama-server` | `brew install llama.cpp` (Metal or CPU) | `winget install ggml.llamacpp` or `choco install llama-cpp` / `llama-server.exe` |
 | Line endings | `.gitattributes`: `*.sh` / `*.py` LF; `*.ps1` / `*.bat` CRLF | same | same |
 | Bootstrap scripts | Native bash | Native bash | PowerShell calls `bash` for `sync-armory`, `detect-models`, `deploy-squad` when Git Bash is installed |
+
+Termux details are in **Quick install** above (`$HOME`, `pkg`, no `systemd`, skip the heavy quant). Do not run `setup.sh` on Android.
 
 ## Fast clone / clone size
 
@@ -127,6 +140,33 @@ One command runs shell syntax checks, router and setup smoke tests, profile line
 
 GitHub Actions runs the same script on pushes and pull requests targeting `main` (`.github/workflows/verify.yml`: `actions/checkout@v4`, Python 3.11, `./scripts/verify.sh`).
 
+## TOC (Tactical Operations Center)
+
+`./scripts/toc.sh` prints a text dashboard: active missions (objective, active flag, board progress), task ownership, recent AARs, model routing, armory `PINNED_SHA`, and the delegation / autonomous / maturity strip.
+
+```bash
+./scripts/toc.sh
+./scripts/toc.sh --watch
+./scripts/toc.sh --watch --interval 15
+./scripts/toc.sh --set-delegation blockers=false external=false
+./scripts/toc.sh --set-autonomous false
+./scripts/toc.sh --toggle
+```
+
+Ask Command for `give me the dashboard` or `TOC`. Command runs `./scripts/toc.sh` and relays the output.
+
+Config: [`brain/toc-config.md`](brain/toc-config.md).
+
+| Key | Default | Effect when true |
+|-----|---------|------------------|
+| `DELEGATE_BLOCKERS` | `false` | Command resolves blockers from `brain/` context. |
+| `DELEGATE_EXTERNAL` | `false` | Command approves external publishes and destructive actions. |
+| `AUTONOMOUS_MODE` | `false` | Command schedules standing cron jobs, operators run them, and the idle goal loop in [`autonomous-mode.md`](brain/playbooks/autonomous-mode.md) runs. `false` means Command acts only on explicit user missions. |
+
+`--set-autonomous true|false` writes `AUTONOMOUS_MODE` in `brain/toc-config.md` and the active `squad.env`. `--set-delegation blockers=true|false external=true|false` updates one or both delegation keys. `--toggle` prompts for all three.
+
+**Pushback guardrails:** even if a delegation toggle is `true`, Command pushes back and asks the human (naming the missing context) when there are fewer than 5 real AAR entries or fewer than 3 completed missions. The status strip shows `pushback active` or `pushback ready`. A completed mission has at least one `board.md` task and every status `done`.
+
 ## Top-level structure
 
 ```
@@ -134,11 +174,15 @@ AGENTS.md          # Unit persona, chain of command, ECC rule
 armory/ecc/        # Vendored affaan-m/ECC (offline read-only reference)
 profiles/          # Six lean operator profiles (~20 lines each)
 brain/             # Shared memory: doctrine, AARs, playbooks
-  playbooks/       # handoff-protocol.md, ooda-loop.md, dmaic-loop.md (+ promoted)
+  toc-config.md    # DELEGATE_BLOCKERS, DELEGATE_EXTERNAL, AUTONOMOUS_MODE, thresholds
+  playbooks/       # ooda-loop, dmaic-loop, handoff-protocol, autonomous-mode,
+                   # degraded-operations, mission-readiness, intel-package,
+                   # comsec, preventive-verification, partner-enablement,
+                   # controlled-change
 missions/          # Per-deployment context (_template + active slugs)
   setup-mission/   # Default first bootstrap (ACTIVE=1 in template repo)
   example-mission/ # Sample mission (inactive by default)
-scripts/           # setup.sh, setup.ps1, router, deploy, sync-armory, verify
+scripts/           # setup.sh, setup.ps1, toc.sh, router, deploy, sync-armory, verify
 harnesses/         # Hermes / Pi install notes
 systemd/           # User unit template for persistence
 ```
@@ -180,7 +224,7 @@ systemctl --user enable --now sf-agent-unit@my-project.service
 loginctl enable-linger "$USER"
 ```
 
-`install-systemd.sh` writes `REPO_ROOT` and `MISSION_SLUG` into a user-unit drop-in. Default unit path assumes `~/task-force-null`; override via the drop-in when cloned elsewhere.
+`install-systemd.sh` writes `REPO_ROOT` and `MISSION_SLUG` into a user-unit drop-in. Default unit path assumes `~/task-force-null`; override via the drop-in when cloned elsewhere. Linux with systemd only. macOS, Windows, and Termux run `./scripts/start.sh` directly (Termux: `tmux` or `termux-services`, see Quick install).
 
 ## Design principles
 

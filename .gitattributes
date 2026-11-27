@@ -3,3 +3,5 @@ armory/ecc/** linguist-vendored
 *.py text eol=lf
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+missions/**/squad.env text eol=lf
+missions/**/squad.env.example text eol=lf

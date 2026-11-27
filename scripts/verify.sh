@@ -146,6 +146,7 @@ run_check "router.py py_compile and --test" check_router
 run_check "test_detect_models.sh" "${REPO_ROOT}/scripts/test_detect_models.sh"
 run_check "sync-armory offline-safe and PINNED_SHA" check_sync_armory
 run_check "test_setup.sh" "${REPO_ROOT}/scripts/test_setup.sh"
+run_check "test_toc.sh" "${REPO_ROOT}/scripts/test_toc.sh"
 run_check "setup.ps1 setup.bat syntax" check_setup_artifacts
 run_check "setup.sh --dry-run smoke" check_setup_dry_run
 run_check "profiles (6 files, <=25 lines)" check_profiles

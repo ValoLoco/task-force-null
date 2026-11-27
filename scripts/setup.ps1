@@ -4,6 +4,7 @@ param(
     [switch]$DryRun,
     [switch]$NonInteractive,
     [switch]$SkipLlm,
+    [switch]$InstallLlm,
     [switch]$SkipKeys,
     [switch]$SkipDeploy,
     [string]$Harness = "",
@@ -148,22 +149,93 @@ function Show-LlamaInstallHint {
     }
 }
 
-function Setup-LocalLlm {
-    if ($SkipLlm) { Write-SetupLog "skip local LLM"; return }
-    $ready = ((Test-Path $WeightsFile) -and (Test-Path $EnsureScript)) -or (Test-LlmHealthy)
-    if ($ready) {
-        Write-SetupLog "reusing existing local LLM at $LocalLlmDir"
-        if (-not (Test-LlmHealthy) -and (Test-Path $EnsureScript)) {
-            if (Get-Command bash -ErrorAction SilentlyContinue) {
-                Invoke-SetupCmd { bash $EnsureScript } "ensure-running.sh"
-            }
+function Test-UrlOk([string]$Url) {
+    try {
+        $r = Invoke-WebRequest -Uri $Url -TimeoutSec 2 -UseBasicParsing
+        return ($r.StatusCode -ge 200 -and $r.StatusCode -lt 400)
+    } catch {
+        return $false
+    }
+}
+
+function Find-FirstGguf([string]$Root) {
+    if (-not $Root -or -not (Test-Path -LiteralPath $Root)) { return $null }
+    $hit = Get-ChildItem -LiteralPath $Root -Filter *.gguf -File -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($hit) { return $hit.FullName }
+    return $null
+}
+
+function Find-RunningLlm {
+    if ((Test-UrlOk "http://127.0.0.1:8080/v1/models") -or (Test-UrlOk "http://127.0.0.1:8080/health")) {
+        return "http://127.0.0.1:8080|llama-server / Inkling"
+    }
+    if ((Test-UrlOk "http://127.0.0.1:11434/api/tags") -or (Test-UrlOk "http://127.0.0.1:11434/v1/models")) {
+        return "http://127.0.0.1:11434|Ollama"
+    }
+    if (Test-UrlOk "http://127.0.0.1:8000/v1/models") {
+        return "http://127.0.0.1:8000|vLLM"
+    }
+    return $null
+}
+
+function Find-InstalledModel {
+    $roots = @()
+    if ($env:LOCAL_LLM_DIR) { $roots += $env:LOCAL_LLM_DIR }
+    if ($LocalLlmDir) { $roots += $LocalLlmDir }
+    $roots += "/workspace/local-llm"
+    if ($env:USERPROFILE) {
+        $roots += (Join-Path $env:USERPROFILE "local-llm")
+        $roots += (Join-Path $env:USERPROFILE ".cache\llama.cpp")
+        $roots += (Join-Path $env:USERPROFILE "models")
+        $roots += (Join-Path $env:USERPROFILE "Models")
+        $roots += (Join-Path $env:USERPROFILE ".cache\huggingface")
+    }
+    $seen = @{}
+    foreach ($root in $roots) {
+        if (-not $root -or $seen.ContainsKey($root)) { continue }
+        $seen[$root] = $true
+        $gguf = Find-FirstGguf $root
+        if ($gguf) { return $gguf }
+    }
+    if ($env:USERPROFILE) {
+        $mani = Join-Path $env:USERPROFILE ".ollama\models\manifests"
+        if (Test-Path -LiteralPath $mani) {
+            $file = Get-ChildItem -LiteralPath $mani -File -Recurse -Depth 5 -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($file) { return $file.FullName }
         }
+    }
+    return $null
+}
+
+function Write-LlmSkipped {
+    Write-SetupLog "skipped local LLM install"
+    Write-SetupLog "API keys (in .env) or a remote inference endpoint will be needed to run models"
+}
+
+function Confirm-LlmInstall {
+    if ($InstallLlm) { return $true }
+    if ($NonInteractive) { return $false }
+    $ans = Read-Host "Install Inkling 2 Mini (6.5 GB AD IQ1_S quant) on 127.0.0.1:8080? [y/N]"
+    if (-not $ans) { return $false }
+    return $ans -match '^[Yy]'
+}
+
+function Setup-LocalLlm {
+    if ($SkipLlm) { Write-LlmSkipped; return }
+    $running = Find-RunningLlm
+    if ($running) {
+        $parts = $running -split '\|', 2
+        Write-SetupLog "detected local model server at $($parts[0]) ($($parts[1])); skipping local LLM install"
         return
     }
-    if (-not (Test-YesNo "Set up llama.cpp + Inkling 2 Mini (6.5 GB) on 127.0.0.1:8080?" $false)) {
-        Write-SetupLog "skipped local LLM setup"
+    $installed = Find-InstalledModel
+    if ($installed) {
+        Write-SetupLog "detected local model at $installed; skipping local LLM install"
         return
     }
+    if (-not (Confirm-LlmInstall)) { Write-LlmSkipped; return }
     $url = if ($env:INKLING_MODEL_URL) { $env:INKLING_MODEL_URL } else {
         "https://huggingface.co/FUN-GAL/Inkling-2-Mini-gguf/resolve/main/Inkling-2-Mini-AD-IQ1_S.gguf"
     }

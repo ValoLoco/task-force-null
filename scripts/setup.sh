@@ -11,6 +11,7 @@ MISSION_SLUG="${SETUP_MISSION_SLUG:-}"
 DRY_RUN=0
 NON_INTERACTIVE=0
 SKIP_LLM=0
+INSTALL_LLM=0
 SKIP_KEYS=0
 SKIP_DEPLOY=0
 CHOSEN_HARNESS=""
@@ -26,7 +27,8 @@ Usage: $0 [options]
 Options:
   --dry-run              Print actions without executing installers or downloads
   --non-interactive      Use env/flags only (no prompts)
-  --skip-llm             Skip local llama.cpp step
+  --skip-llm             Skip local LLM install (no download)
+  --install-llm          Accept Inkling 2 Mini download (required with --non-interactive)
   --skip-keys            Skip API key prompts
   --skip-deploy          Skip sync/detect/deploy bootstrap
   --harness NAME         hermes|pi|claude|grok|cursor|generic
@@ -44,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY_RUN=1; shift ;;
     --non-interactive) NON_INTERACTIVE=1; shift ;;
     --skip-llm) SKIP_LLM=1; shift ;;
+    --install-llm) INSTALL_LLM=1; shift ;;
     --skip-keys) SKIP_KEYS=1; shift ;;
     --skip-deploy) SKIP_DEPLOY=1; shift ;;
     --harness) CHOSEN_HARNESS="$2"; shift 2 ;;
@@ -56,7 +59,7 @@ done
 
 [[ -n "${SETUP_HARNESS:-}" && -z "$CHOSEN_HARNESS" ]] && CHOSEN_HARNESS="$SETUP_HARNESS"
 
-log() { printf '[setup] %s\n' "$*"; }
+log() { printf '[setup] %s\n' "$*" >&2; }
 
 run_cmd() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -67,7 +70,20 @@ run_cmd() {
   fi
 }
 
+run_in_repo() {
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "[dry-run] would run in ${REPO_ROOT}: $*"
+  else
+    log "run in ${REPO_ROOT}: $*"
+    ( cd "$REPO_ROOT" && "$@" )
+  fi
+}
+
 detect_os() {
+  if [[ -n "${TERMUX_VERSION:-}" || "${PREFIX:-}" == *com.termux* ]]; then
+    echo "termux"
+    return
+  fi
   local u
   u="$(uname -s 2>/dev/null || echo unknown)"
   case "$u" in
@@ -81,6 +97,10 @@ detect_os() {
 detect_pkg_manager() {
   local os="${SETUP_OS:-$(detect_os)}"
   case "$os" in
+    termux)
+      command -v pkg >/dev/null 2>&1 && { echo "pkg"; return 0; }
+      echo "none"
+      ;;
     darwin)
       command -v brew >/dev/null 2>&1 && { echo "brew"; return 0; }
       echo "none"
@@ -117,6 +137,7 @@ maybe_delegate_windows_ps1() {
   [[ "$DRY_RUN" -eq 1 ]] && args+=(-DryRun)
   [[ "$NON_INTERACTIVE" -eq 1 ]] && args+=(-NonInteractive)
   [[ "$SKIP_LLM" -eq 1 ]] && args+=(-SkipLlm)
+  [[ "$INSTALL_LLM" -eq 1 ]] && args+=(-InstallLlm)
   [[ "$SKIP_KEYS" -eq 1 ]] && args+=(-SkipKeys)
   [[ "$SKIP_DEPLOY" -eq 1 ]] && args+=(-SkipDeploy)
   [[ -n "$CHOSEN_HARNESS" ]] && args+=(-Harness "$CHOSEN_HARNESS")
@@ -158,7 +179,9 @@ detect_harness_list() {
   else
     log "detected harnesses: ${found[*]}"
   fi
-  printf '%s\n' "${found[@]}"
+  if [[ ${#found[@]} -gt 0 ]]; then
+    printf '%s\n' "${found[@]}"
+  fi
 }
 
 choose_harness() {
@@ -166,7 +189,10 @@ choose_harness() {
     log "using harness: $CHOSEN_HARNESS"
     return 0
   fi
-  mapfile -t detected < <(detect_harness_list)
+  detected=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && detected+=("$line")
+  done < <(detect_harness_list)
   if [[ ${#detected[@]} -eq 0 ]]; then
     log "no harness installed"
     if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
@@ -292,25 +318,99 @@ llm_healthy() {
   return 1
 }
 
-local_llm_ready() {
-  [[ -f "$ENSURE_SCRIPT" && -f "$WEIGHTS_FILE" ]] && return 0
-  llm_healthy && return 0
+note_llm_skipped() {
+  log "skipped local LLM install"
+  log "API keys (in .env) or a remote inference endpoint will be needed to run models"
+}
+
+probe_url() {
+  local url="$1"
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -fsS --max-time 2 "$url" >/dev/null 2>&1
+}
+
+first_gguf() {
+  local root="$1" hit
+  [[ -d "$root" ]] || return 1
+  hit="$(find "$root" -maxdepth 4 -type f -name '*.gguf' 2>/dev/null | head -n 1 || true)"
+  [[ -n "$hit" ]] || return 1
+  printf '%s\n' "$hit"
+}
+
+detect_running_server() {
+  if probe_url "http://127.0.0.1:8080/v1/models" || probe_url "http://127.0.0.1:8080/health"; then
+    printf '%s\n' "http://127.0.0.1:8080|llama-server / Inkling"
+    return 0
+  fi
+  if probe_url "http://127.0.0.1:11434/api/tags" || probe_url "http://127.0.0.1:11434/v1/models"; then
+    printf '%s\n' "http://127.0.0.1:11434|Ollama"
+    return 0
+  fi
+  if probe_url "http://127.0.0.1:8000/v1/models"; then
+    printf '%s\n' "http://127.0.0.1:8000|vLLM"
+    return 0
+  fi
   return 1
 }
 
-setup_local_llm() {
-  [[ "$SKIP_LLM" -eq 1 ]] && { log "skip local LLM"; return 0; }
-  if local_llm_ready; then
-    log "reusing existing local LLM at ${LOCAL_LLM_DIR}"
-    if ! llm_healthy; then
-      if [[ -f "$ENSURE_SCRIPT" ]]; then
-        run_cmd bash "$ENSURE_SCRIPT"
-      fi
+detect_installed_model() {
+  local root hit
+  for root in \
+    "$LOCAL_LLM_DIR" \
+    "/workspace/local-llm" \
+    "${HOME}/local-llm" \
+    "${HOME}/.cache/llama.cpp" \
+    "${HOME}/models" \
+    "${HOME}/Models" \
+    "${HOME}/.cache/huggingface"
+  do
+    [[ -n "$root" ]] || continue
+    if hit="$(first_gguf "$root")"; then
+      printf '%s\n' "$hit"
+      return 0
     fi
+  done
+  if [[ -d "${HOME}/.ollama/models/manifests" ]]; then
+    hit="$(find "${HOME}/.ollama/models/manifests" -maxdepth 5 -type f 2>/dev/null | head -n 1 || true)"
+    if [[ -n "$hit" ]]; then
+      printf '%s\n' "$hit"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+accept_llm_install() {
+  local ans
+  if [[ "$INSTALL_LLM" -eq 1 ]]; then
     return 0
   fi
-  if ! prompt_yes_no "Set up llama.cpp + Inkling 2 Mini (6.5 GB) on 127.0.0.1:8080?" n; then
-    log "skipped local LLM setup"
+  if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    return 1
+  fi
+  printf '%s' "Install Inkling 2 Mini (6.5 GB AD IQ1_S quant) on 127.0.0.1:8080? [y/N]: " >&2
+  read -r ans || true
+  [[ "${ans:-N}" =~ ^[Yy]([Ee][Ss])?$ ]]
+}
+
+setup_local_llm() {
+  local detected path label
+  if [[ "$SKIP_LLM" -eq 1 ]]; then
+    note_llm_skipped
+    return 0
+  fi
+  if detected="$(detect_running_server)"; then
+    path="${detected%%|*}"
+    label="${detected#*|}"
+    log "detected local model server at ${path} (${label}); skipping local LLM install"
+    return 0
+  fi
+  if path="$(detect_installed_model)"; then
+    log "detected local model at ${path}; skipping local LLM install"
+    return 0
+  fi
+  if ! accept_llm_install; then
+    note_llm_skipped
     return 0
   fi
   local url="${INKLING_MODEL_URL:-https://huggingface.co/FUN-GAL/Inkling-2-Mini-gguf/resolve/main/Inkling-2-Mini-AD-IQ1_S.gguf}"
@@ -414,15 +514,15 @@ bootstrap_deploy() {
   [[ "$SKIP_DEPLOY" -eq 1 ]] && { log "skip bootstrap deploy"; return 0; }
   [[ -z "$MISSION_SLUG" ]] && MISSION_SLUG="$DEFAULT_SLUG"
   source_env_safe
-  run_cmd env -C "$REPO_ROOT" bash ./scripts/sync-armory.sh --allow-offline
-  run_cmd env -C "$REPO_ROOT" MISSION_SLUG="$MISSION_SLUG" bash ./scripts/detect-models.sh --slug "$MISSION_SLUG"
+  run_in_repo bash ./scripts/sync-armory.sh --allow-offline
+  run_in_repo env MISSION_SLUG="$MISSION_SLUG" bash ./scripts/detect-models.sh --slug "$MISSION_SLUG"
   if [[ -d "${REPO_ROOT}/missions/${MISSION_SLUG}" ]]; then
     log "mission ${MISSION_SLUG} already exists; skipping deploy-squad.sh"
   else
-    run_cmd env -C "$REPO_ROOT" SKIP_SYNC_ARMORY=1 SKIP_DETECT_MODELS=1 \
+    run_in_repo env SKIP_SYNC_ARMORY=1 SKIP_DETECT_MODELS=1 \
       bash ./scripts/deploy-squad.sh "$MISSION_SLUG" "Task Force Null setup mission"
   fi
-  run_cmd env -C "$REPO_ROOT" MISSION_SLUG="$MISSION_SLUG" bash ./scripts/start.sh
+  run_in_repo env MISSION_SLUG="$MISSION_SLUG" bash ./scripts/start.sh
   deploy_harness_notes
 }
 
@@ -430,6 +530,18 @@ main() {
   SETUP_OS="$(detect_os)"
   SETUP_PKG="$(detect_pkg_manager)"
   log "Task Force Null setup (repo=${REPO_ROOT}, os=${SETUP_OS}, pkg=${SETUP_PKG})"
+  if [[ "$SETUP_OS" == "termux" ]]; then
+    log "Termux detected. Skip setup.sh on Android."
+    log "sudo apt-get, /workspace/local-llm, and systemd do not apply here."
+    log "Clone into \$HOME. /sdcard is noexec."
+    log "Then run: ./scripts/sync-armory.sh --allow-offline"
+    log "         ./scripts/detect-models.sh --slug setup-mission"
+    log "         ./scripts/start.sh"
+    log "Inference: pkg install llama-cpp and a 1B to 4B Q4_K_M model on 127.0.0.1:8080, or tunnel a remote llama-server there."
+    log "The 6.88 GB Inkling 2 Mini quant is too heavy for a phone."
+    log "Harness: pkg install nodejs git, then npm install -g --ignore-scripts @earendil-works/pi-coding-agent and pi install npm:pi-agents (Node 24+, node:sqlite)."
+    exit 0
+  fi
   maybe_delegate_windows_ps1 || true
   [[ "$DRY_RUN" -eq 1 ]] && log "[dry-run] mode enabled (no installs, downloads, or .env writes)"
   choose_harness

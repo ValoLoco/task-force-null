@@ -44,19 +44,41 @@ MODEL_TIER_DEFAULT=standard
 MODEL_TIER_RECON=light
 MODEL_TIER_BUILDER=standard
 MODEL_TIER_COMMAND=heavy
+AUTONOMOUS_MODE=false
 ACTIVE=1
 EOF
 
-# Patch mission.md slug and objective
-sed -i "s/\`<slug>\`/\`${SLUG}\`/g" "${DEST}/mission.md"
-sed -i "s/One sentence end state./${OBJECTIVE}/" "${DEST}/mission.md"
+# Patch mission.md slug and objective (BSD and GNU sed both accept this awk path).
+awk -v slug="$SLUG" -v objective="$OBJECTIVE" '
+  BEGIN { slug_old = "`<slug>`"; obj_old = "One sentence end state." }
+  {
+    sub(/\r$/, "")
+    line = $0
+    while (1) {
+      i = index(line, slug_old)
+      if (i == 0) break
+      line = substr(line, 1, i - 1) "`" slug "`" substr(line, i + length(slug_old))
+    }
+    i = index(line, obj_old)
+    if (i > 0) {
+      line = substr(line, 1, i - 1) objective substr(line, i + length(obj_old))
+    }
+    print line
+  }
+' "${DEST}/mission.md" >"${DEST}/mission.md.tmp"
+mv "${DEST}/mission.md.tmp" "${DEST}/mission.md"
 
-# Deactivate other missions (single active)
+# Deactivate other missions (single active). Strip CR so Windows checkouts match.
 while IFS= read -r envfile; do
   [[ "$envfile" == "${DEST}/squad.env" ]] && continue
-  if grep -q '^ACTIVE=1' "$envfile" 2>/dev/null; then
-    sed -i 's/^ACTIVE=1$/ACTIVE=0/' "$envfile"
-  fi
+  awk '
+    {
+      sub(/\r$/, "")
+      if ($0 ~ /^ACTIVE=1[[:space:]]*$/) print "ACTIVE=0"
+      else print
+    }
+  ' "$envfile" >"${envfile}.tmp"
+  mv "${envfile}.tmp" "$envfile"
 done < <(find "${MISSIONS}" -mindepth 2 -maxdepth 2 -name 'squad.env' 2>/dev/null)
 
 if [[ "${SKIP_SYNC_ARMORY:-0}" != "1" ]]; then
