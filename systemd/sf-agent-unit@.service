@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-Environment=REPO_ROOT=%h/second-brain
+Environment=REPO_ROOT=%h/task-force-null
 Environment=MISSION_SLUG=%i
 ExecStart=/bin/bash -c 'cd "$REPO_ROOT" && exec ./scripts/start.sh'
 Restart=on-failure

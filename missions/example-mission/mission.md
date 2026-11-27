@@ -1,7 +1,7 @@
 # Commander's Intent
 
 **Mission slug:** `example-mission`  
-**Objective:** Validate the second-brain template: deploy squad, route one task, record one AAR.
+**Objective:** Validate the Task Force Null template: deploy squad, route one task, record one AAR.
 
 ## Success Criteria
 

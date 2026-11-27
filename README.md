@@ -1,6 +1,14 @@
-# second-brain
+# Task Force Null
 
-Lean, redeployable **Special Forces AI agent team** template. One five-operator squad (plus Command for multi-squad work), one shared `brain/`, and swappable `missions/<slug>/` context per deployment.
+Lean, redeployable **Special Forces AI agent team** template ([`ValoLoco/task-force-null`](https://github.com/ValoLoco/task-force-null)). One five-operator squad plus Command for multi-squad work, shared `brain/`, swappable `missions/<slug>/` per deployment.
+
+## One-line deploy prompt
+
+Copy into any AI harness (Hermes, Grok Bot, Claude, Codex, Cursor, etc.):
+
+```text
+You are Task Force Null: read AGENTS.md, brain/doctrine.md, and profiles/{lead,recon,builder,medic-qa,comms,command}.md; clone or vendor https://github.com/ValoLoco/task-force-null into this project; run scripts/deploy-squad.sh <slug> "<one-line objective>" and scripts/start.sh; operate only within missions/<slug>/mission.md left/right limits with one board.md owner per task; use scripts/router.py for routing; ECC is read-only at /workspace/ecc (one skill at a time via /workspace/ecc/search.sh only, never copy ECC into the repo, never run ECC installers or hooks); human approval for all external publish and destructive actions.
+```
 
 ## Special Forces parallel
 
@@ -13,40 +21,47 @@ Lean, redeployable **Special Forces AI agent team** template. One five-operator 
 | `medic-qa.md` | 18D | Evidence-based verification, 3-line AAR |
 | `comms.md` | 18E | Human-facing packaging, approval gates |
 
-Profiles live in `profiles/` and stay **domain-agnostic**. Project-specific intent lives under `missions/`.
+Profiles live in `profiles/` and stay **domain-agnostic**. Project intent lives under `missions/`. Unit soul and chain of command: **`AGENTS.md`**.
 
 ## Top-level structure
 
 ```
-profiles/          # Six lean operator profiles (~15-25 lines each)
+AGENTS.md          # Unit persona, chain of command, ECC rule
+profiles/          # Six lean operator profiles (~20 lines each)
 brain/             # Shared memory: doctrine, AARs, playbooks
 missions/          # Per-deployment context (_template + active slugs)
 scripts/           # Router, deploy, start, AAR (bash + Python 3 stdlib)
 systemd/           # User unit template for persistence
 ```
 
+## ECC read-only armory
+
+Task Force Null does **not** ship specialist skills. When depth is needed, operators use the host **ECC armory** at `/workspace/ecc`:
+
+| Rule | Detail |
+|------|--------|
+| Location | `/workspace/ecc` on the workspace host (outside this repo) |
+| Discovery | `/workspace/ecc/search.sh <query>` returns candidate skill paths |
+| Consumption | Read the chosen skill **in place**; apply its guidance for the active task only |
+| Prohibited | Copying ECC files into this repo, duplicating skills under `brain/playbooks/`, running ECC install scripts, or enabling ECC hooks |
+
+Medic QA blocks merges that embed ECC skill bodies. Lead logs which ECC skill was consulted in the task handoff packet when it influenced scope or implementation.
+
 ## How `brain/` compounds
 
 1. Squads append **AARs** (`Outcome` / `Friction` / `Fix`) via `scripts/aar.sh`.
-2. **Rule-of-Two** (`brain/doctrine.md`): the same fix for the same friction class must appear in two AARs before Command promotes a **playbook** under `brain/playbooks/`.
-3. Doctrine and handoff protocol change rarely; mission folders swap per deploy without editing profiles.
+2. **Rule-of-Two** (`brain/doctrine.md`): the same fix for the same friction class must appear in two AARs before Command promotes a **playbook** under `brain/playbooks/` (squad-native only, never ECC copies).
+3. Mission folders swap per deploy; profiles and `AGENTS.md` stay stable.
 
 ## Deploy a new squad (new project)
 
 ```bash
-git clone https://github.com/ValoLoco/second-brain.git
-cd second-brain
+git clone https://github.com/ValoLoco/task-force-null.git
+cd task-force-null
 
-# Create and activate a mission slug
 ./scripts/deploy-squad.sh my-project "Ship the API integration MVP"
-
-# Validate layout and active mission
 ./scripts/start.sh
-
-# Route a task (optional logging)
 python3 scripts/router.py --log "research dependency versions"
-
-# Record an AAR
 MISSION_SLUG=my-project ./scripts/aar.sh \
   "MVP shipped" "Missing env validation" "start.sh checks squad.env"
 ```
@@ -55,8 +70,6 @@ Set `MISSION_SLUG` in the environment or keep exactly one `missions/*/squad.env`
 
 ## Systemd persistence
 
-Install the user unit (adjust path via override if not in `~/second-brain`):
-
 ```bash
 ./scripts/install-systemd.sh my-project
 systemctl --user daemon-reload
@@ -64,7 +77,7 @@ systemctl --user enable --now sf-agent-unit@my-project.service
 loginctl enable-linger "$USER"
 ```
 
-The unit runs `scripts/start.sh` oneshot with `Restart=on-failure`. Use `install-systemd.sh` to write `REPO_ROOT` and `MISSION_SLUG` into a drop-in.
+`install-systemd.sh` writes `REPO_ROOT` and `MISSION_SLUG` into a user-unit drop-in. Default unit path assumes `~/task-force-null`; override via the drop-in when cloned elsewhere.
 
 ## Design principles
 
@@ -74,4 +87,4 @@ The unit runs `scripts/start.sh` oneshot with `Restart=on-failure`. Use `install
 
 ## Example mission
 
-See `missions/example-mission/` for a minimal populated mission. Copy ideas from it, or deploy fresh from `_template` with `deploy-squad.sh`.
+See `missions/example-mission/` for a minimal populated mission, or `./scripts/deploy-squad.sh` from `_template`.
