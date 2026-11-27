@@ -36,7 +36,8 @@ Options:
   --install-harness NAME Install hermes or pi if missing (non-interactive)
 
 Env: SETUP_MISSION_SLUG, SETUP_HARNESS, SETUP_BASH_ONLY=1, LOCAL_LLM_DIR, INKLING_MODEL_URL,
-     TFN_LLM_PROBE_URL, TFN_LLM_PROBE_HOST, TFN_LLM_PROBE_PORT, TFN_HARNESS
+     TFN_LLM_PROBE_URL, TFN_LLM_PROBE_HOST, TFN_LLM_PROBE_PORT, TFN_HARNESS,
+     TFN_LLM_MODEL_SCAN=0 (skip on-disk model scan), TFN_LLM_SEARCH_DIRS (colon-separated roots)
 Windows Git Bash: prefers delegation to scripts/setup.ps1 (set SETUP_BASH_ONLY=1 to stay in bash).
 EOF
   exit 1
@@ -380,7 +381,25 @@ detect_running_server() {
 }
 
 detect_installed_model() {
-  local root hit
+  local root hit dir scan_ollama=1
+  if [[ "${TFN_LLM_MODEL_SCAN:-1}" == "0" ]]; then
+    return 1
+  fi
+  if [[ -n "${TFN_LLM_SEARCH_DIRS+x}" ]]; then
+    scan_ollama=0
+    if [[ -z "${TFN_LLM_SEARCH_DIRS}" ]]; then
+      return 1
+    fi
+    local IFS=':'
+    for dir in ${TFN_LLM_SEARCH_DIRS}; do
+      [[ -n "$dir" ]] || continue
+      if hit="$(first_gguf "$dir")"; then
+        printf '%s\n' "$hit"
+        return 0
+      fi
+    done
+    return 1
+  fi
   for root in \
     "$LOCAL_LLM_DIR" \
     "/workspace/local-llm" \
@@ -396,7 +415,7 @@ detect_installed_model() {
       return 0
     fi
   done
-  if [[ -d "${HOME}/.ollama/models/manifests" ]]; then
+  if [[ "$scan_ollama" -eq 1 ]] && [[ -d "${HOME}/.ollama/models/manifests" ]]; then
     hit="$(find "${HOME}/.ollama/models/manifests" -maxdepth 5 -type f 2>/dev/null | head -n 1 || true)"
     if [[ -n "$hit" ]]; then
       printf '%s\n' "$hit"
