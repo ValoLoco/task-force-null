@@ -4,8 +4,9 @@ use gpui::{
 };
 use std::path::PathBuf;
 use tfn_toc::feed::{spawn_fs_watch, spawn_sse_feed};
+use tfn_toc::shutdown::ShutdownSignal;
 use tfn_toc::state::collect_state;
-use tfn_toc::store::{StoreEvent, TocStore};
+use tfn_toc::store::{FeedMode, StoreEvent, TocStore};
 use tfn_toc::view::TocDashboard;
 
 #[derive(Debug, Parser)]
@@ -40,15 +41,28 @@ fn main() {
     let store = TocStore::new(cli.mission.clone());
     let _ = store.apply(StoreEvent::State(collect_state(&repo)));
 
-    let store_bg = store.clone();
-    if let Some(url) = cli.url.clone() {
-        spawn_sse_feed(&url, &repo, store_bg);
+    let shutdown = ShutdownSignal::new();
+    let sse_mode = cli.url.is_some();
+    store.set_feed_mode(if sse_mode {
+        FeedMode::Sse
     } else {
-        spawn_fs_watch(&repo, store_bg);
+        FeedMode::Filesystem
+    });
+
+    if let Some(url) = cli.url.clone() {
+        spawn_sse_feed(&url, &repo, store.clone(), shutdown.clone());
+    } else {
+        spawn_fs_watch(&repo, store.clone(), shutdown.clone());
     }
 
     let store_ui = store.clone();
     Application::new().run(move |cx: &mut App| {
+        let shutdown_quit = shutdown.clone();
+        let _quit_sub = cx.on_app_quit(move |_cx| {
+            shutdown_quit.stop();
+            async {}
+        });
+
         let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
         cx.open_window(
             WindowOptions {

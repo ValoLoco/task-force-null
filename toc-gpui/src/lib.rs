@@ -5,13 +5,17 @@ pub mod armory;
 pub mod board;
 pub mod config;
 pub mod feed;
+pub mod filter;
 pub mod log_io;
+pub mod log_ring;
 pub mod mission;
 pub mod models;
 pub mod paths;
 pub mod roster;
+pub mod shutdown;
 pub mod state;
 pub mod store;
+pub mod theme;
 pub mod types;
 
 #[cfg(feature = "desktop")]
