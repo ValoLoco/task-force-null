@@ -151,9 +151,10 @@ if [[ -f "$MODELS_FILE" ]]; then
 fi
 
 if command -v python3 >/dev/null 2>&1; then
-  export TFN_DETECT_PROBE_OPENAI_URL="$(tfn_detect_probe_openai_url)"
-  export TFN_DETECT_PROBE_VLLM_URL="$(tfn_detect_probe_vllm_url)"
-  export TFN_DETECT_PROBE_OLLAMA_URL="$(tfn_detect_probe_ollama_url)"
+  export TFN_DETECT_PROBE_OPENAI_URL TFN_DETECT_PROBE_VLLM_URL TFN_DETECT_PROBE_OLLAMA_URL
+  TFN_DETECT_PROBE_OPENAI_URL="$(tfn_detect_probe_openai_url)"
+  TFN_DETECT_PROBE_VLLM_URL="$(tfn_detect_probe_vllm_url)"
+  TFN_DETECT_PROBE_OLLAMA_URL="$(tfn_detect_probe_ollama_url)"
   python3 - "$TMP_INV" "$HARNESS" "$TS" <<'PY'
 import json, os, sys
 from urllib.request import Request, urlopen

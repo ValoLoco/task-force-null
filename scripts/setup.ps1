@@ -14,6 +14,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+. (Join-Path $RepoRoot "scripts/inkling_detect.ps1")
 $DefaultSlug = "setup-mission"
 if (-not $MissionSlug) { $MissionSlug = $env:SETUP_MISSION_SLUG }
 if (-not $Harness -and $env:SETUP_HARNESS) { $Harness = $env:SETUP_HARNESS }
@@ -30,8 +31,7 @@ $LocalLlmDir = if ($env:LOCAL_LLM_DIR) { $env:LOCAL_LLM_DIR } else {
     if (Test-Path "/workspace/local-llm") { "/workspace/local-llm" }
     else { Join-Path $env:USERPROFILE "local-llm" }
 }
-$WeightsFile = Join-Path $LocalLlmDir "weights\Inkling-2-Mini-AD-IQ1_S.gguf"
-$EnsureScript = Join-Path $LocalLlmDir "ensure-running.sh"
+$script:WeightsFile = ""
 
 function Write-SetupLog($msg) {
     Write-Host "[setup] $msg"
@@ -137,16 +137,41 @@ function Install-HarnessIfNeeded($target) {
     }
 }
 
+function Get-TfnLlmProbeHost {
+    if ($env:TFN_LLM_PROBE_HOST) { return $env:TFN_LLM_PROBE_HOST }
+    return "127.0.0.1"
+}
+
+function Get-TfnLlmProbePort {
+    if ($env:TFN_LLM_PROBE_PORT) { return $env:TFN_LLM_PROBE_PORT }
+    return "8080"
+}
+
+function Get-TfnLlmProbeHealthUrl {
+    if ($env:TFN_LLM_PROBE_URL) { return $env:TFN_LLM_PROBE_URL }
+    $probeHost = Get-TfnLlmProbeHost
+    $port = Get-TfnLlmProbePort
+    return "http://${probeHost}:${port}/health"
+}
+
+function Get-TfnLlmProbeModelsUrl {
+    $probeHost = Get-TfnLlmProbeHost
+    $port = Get-TfnLlmProbePort
+    return "http://${probeHost}:${port}/v1/models"
+}
+
+function Get-TfnLlmProbeDisplayBase {
+    $probeHost = Get-TfnLlmProbeHost
+    $port = Get-TfnLlmProbePort
+    return "http://${probeHost}:${port}"
+}
+
 function Test-LlmHealthy {
-    try {
-        $r = Invoke-WebRequest -Uri "http://127.0.0.1:8080/v1/models" -TimeoutSec 2 -UseBasicParsing
-        return $r.StatusCode -eq 200
-    } catch {
-        try {
-            $r = Invoke-WebRequest -Uri "http://127.0.0.1:8080/health" -TimeoutSec 2 -UseBasicParsing
-            return $r.StatusCode -eq 200
-        } catch { return $false }
+    $urls = @(Get-TfnLlmProbeModelsUrl, Get-TfnLlmProbeHealthUrl)
+    foreach ($url in $urls) {
+        if (Test-UrlOk $url) { return $true }
     }
+    return $false
 }
 
 function Show-LlamaInstallHint {
@@ -176,8 +201,9 @@ function Find-FirstGguf([string]$Root) {
 }
 
 function Find-RunningLlm {
-    if ((Test-UrlOk "http://127.0.0.1:8080/v1/models") -or (Test-UrlOk "http://127.0.0.1:8080/health")) {
-        return "http://127.0.0.1:8080|llama-server / Inkling"
+    $base = Get-TfnLlmProbeDisplayBase
+  if ((Test-UrlOk (Get-TfnLlmProbeModelsUrl)) -or (Test-UrlOk (Get-TfnLlmProbeHealthUrl))) {
+        return "${base}|llama-server / Inkling"
     }
     if ((Test-UrlOk "http://127.0.0.1:11434/api/tags") -or (Test-UrlOk "http://127.0.0.1:11434/v1/models")) {
         return "http://127.0.0.1:11434|Ollama"
@@ -189,6 +215,17 @@ function Find-RunningLlm {
 }
 
 function Find-InstalledModel {
+    if ($env:TFN_LLM_MODEL_SCAN -eq "0") { return $null }
+    if ($null -ne $env:TFN_LLM_SEARCH_DIRS) {
+        if ($env:TFN_LLM_SEARCH_DIRS -eq "") { return $null }
+        foreach ($part in $env:TFN_LLM_SEARCH_DIRS -split ':') {
+            $part = $part.Trim()
+            if (-not $part) { continue }
+            $gguf = Find-FirstGguf $part
+            if ($gguf) { return $gguf }
+        }
+        return $null
+    }
     $roots = @()
     if ($env:LOCAL_LLM_DIR) { $roots += $env:LOCAL_LLM_DIR }
     if ($LocalLlmDir) { $roots += $LocalLlmDir }
@@ -207,12 +244,14 @@ function Find-InstalledModel {
         $gguf = Find-FirstGguf $root
         if ($gguf) { return $gguf }
     }
-    if ($env:USERPROFILE) {
-        $mani = Join-Path $env:USERPROFILE ".ollama\models\manifests"
-        if (Test-Path -LiteralPath $mani) {
-            $file = Get-ChildItem -LiteralPath $mani -File -Recurse -Depth 5 -ErrorAction SilentlyContinue |
-                Select-Object -First 1
-            if ($file) { return $file.FullName }
+    if ($env:TFN_LLM_MODEL_SCAN -ne "0") {
+        if ($env:USERPROFILE) {
+            $mani = Join-Path $env:USERPROFILE ".ollama\models\manifests"
+            if (Test-Path -LiteralPath $mani) {
+                $file = Get-ChildItem -LiteralPath $mani -File -Recurse -Depth 5 -ErrorAction SilentlyContinue |
+                    Select-Object -First 1
+                if ($file) { return $file.FullName }
+            }
         }
     }
     return $null
@@ -223,10 +262,46 @@ function Write-LlmSkipped {
     Write-SetupLog "API keys (in .env) or a remote inference endpoint will be needed to run models"
 }
 
+function Resolve-InklingDownload {
+    param([string]$WeightsDir)
+    $sel = Select-InklingQuant $WeightsDir
+    switch ($sel) {
+        "skip_low_memory" { return $null }
+        "skip_low_disk" { return $null }
+        "invalid_quant" { return $null }
+        "explicit_url" {
+            $url = $env:INKLING_MODEL_URL
+            $file = [System.IO.Path]::GetFileName($url)
+            $script:WeightsFile = Join-Path $WeightsDir $file
+            return $url
+        }
+        default {
+            $url = Get-InklingModelUrl $sel
+            $file = Get-InklingWeightsFileName $sel
+            Write-SetupLog "selected Inkling quant $sel ($file) for RAM/VRAM/disk profile"
+            $script:WeightsFile = Join-Path $WeightsDir $file
+            return $url
+        }
+    }
+}
+
 function Confirm-LlmInstall {
+    param([string]$WeightsDir)
     if ($InstallLlm) { return $true }
     if ($NonInteractive) { return $false }
-    $ans = Read-Host "Install Inkling 2 Mini (6.5 GB AD IQ1_S quant) on 127.0.0.1:8080? [y/N]"
+    $sel = Select-InklingQuant $WeightsDir
+    if ($sel -in @("skip_low_memory", "skip_low_disk")) {
+        foreach ($msg in (Get-InklingSkipMessages $WeightsDir)) {
+            Write-SetupLog $msg
+        }
+        return $false
+    }
+    $hint = "Inkling 2 Mini (auto quant from unsloth/Inkling-2-Mini-GGUF)"
+    if ($sel -and $sel -ne "explicit_url" -and $sel -ne "invalid_quant") {
+        $hint = "Inkling 2 Mini quant $sel"
+    }
+    $port = Get-TfnLlmProbePort
+    $ans = Read-Host "Install ${hint} on 127.0.0.1:${port}? [y/N]"
     if (-not $ans) { return $false }
     return $ans -match '^[Yy]'
 }
@@ -244,22 +319,28 @@ function Setup-LocalLlm {
         Write-SetupLog "detected local model at $installed; skipping local LLM install"
         return
     }
-    if (-not (Confirm-LlmInstall)) { Write-LlmSkipped; return }
-    $url = if ($env:INKLING_MODEL_URL) { $env:INKLING_MODEL_URL } else {
-        "https://huggingface.co/FUN-GAL/Inkling-2-Mini-gguf/resolve/main/Inkling-2-Mini-AD-IQ1_S.gguf"
-    }
     $weightsDir = Join-Path $LocalLlmDir "weights"
+    if (-not (Confirm-LlmInstall $weightsDir)) { Write-LlmSkipped; return }
+    $url = Resolve-InklingDownload $weightsDir
+    if (-not $url) {
+        foreach ($msg in (Get-InklingSkipMessages $weightsDir)) {
+            Write-SetupLog $msg
+        }
+        Write-LlmSkipped
+        return
+    }
     if ($DryRun) {
         Write-SetupLog "[dry-run] would mkdir $weightsDir"
-        Write-SetupLog "[dry-run] would download Inkling weights"
-        Write-SetupLog "[dry-run] would start llama-server.exe on :8080"
+        Write-SetupLog "[dry-run] would download Inkling weights to $script:WeightsFile"
+        Write-SetupLog "[dry-run] url: $url"
+        Write-SetupLog "[dry-run] would start llama-server.exe on :$(Get-TfnLlmProbePort)"
         return
     }
     New-Item -ItemType Directory -Force -Path $weightsDir | Out-Null
-    if (-not (Test-Path $WeightsFile)) {
-        Invoke-WebRequest -Uri $url -OutFile $WeightsFile
+    if (-not (Test-Path $script:WeightsFile)) {
+        Invoke-WebRequest -Uri $url -OutFile $script:WeightsFile
     } else {
-        Write-SetupLog "weights already present"
+        Write-SetupLog "weights already present at $script:WeightsFile"
     }
     $llama = Get-Command llama-server -ErrorAction SilentlyContinue
     if (-not $llama) {
@@ -272,7 +353,7 @@ function Setup-LocalLlm {
     }
     if (-not (Test-LlmHealthy)) {
         Start-Process -FilePath $llama.Source -ArgumentList @(
-            "-m", $WeightsFile, "--host", "127.0.0.1", "--port", "8080",
+            "-m", $script:WeightsFile, "--host", (Get-TfnLlmProbeHost), "--port", (Get-TfnLlmProbePort),
             "--load-mode", "mmap", "--lazy-mode", "on", "--n-gpu-layers", "0", "--ctx-size", "2048"
         ) -WindowStyle Hidden
         Start-Sleep -Seconds 2
@@ -393,4 +474,14 @@ if ($InstallHarness) {
 Setup-LocalLlm
 Prompt-ApiKeys
 Bootstrap-Deploy -slug $MissionSlug -chosen $ChosenHarness
+
+function Show-TocHint {
+    $toc = Join-Path $RepoRoot "scripts/toc.sh"
+    Write-SetupLog "Next: $toc"
+    Write-SetupLog "      $toc --web"
+    Write-SetupLog "      $toc --gpui"
+    Write-SetupLog "      $toc --repo-root `"$RepoRoot`"  (non-default clone path)"
+}
+
+Show-TocHint
 Write-SetupLog "setup complete"

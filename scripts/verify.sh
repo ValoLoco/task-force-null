@@ -48,6 +48,14 @@ check_router() {
     python3 "${REPO_ROOT}/scripts/router.py" --test
 }
 
+check_toc_python() {
+  local f ok=0
+  for f in toc_lib.py toc_config.py toc_mission.py toc_state.py toc_render.py toc-web.py; do
+    python3 -m py_compile "${REPO_ROOT}/scripts/${f}" || ok=1
+  done
+  [[ "$ok" -eq 0 ]]
+}
+
 check_sync_armory() {
   local pinned="${REPO_ROOT}/armory/ecc/PINNED_SHA"
   if [[ ! -f "$pinned" ]] || [[ ! -s "$pinned" ]]; then
@@ -156,6 +164,8 @@ fi
 
 run_check "scripts/*.sh executable and bash -n" check_shell_scripts
 run_check "router.py py_compile and --test" check_router
+run_check "toc python modules py_compile" check_toc_python
+run_check "test_op_log.sh" "${REPO_ROOT}/scripts/test_op_log.sh"
 run_check "test_detect_models.sh" "${REPO_ROOT}/scripts/test_detect_models.sh"
 run_check "sync-armory offline-safe and PINNED_SHA" check_sync_armory
 run_check "test_setup.sh" "${REPO_ROOT}/scripts/test_setup.sh"
