@@ -3,6 +3,7 @@
 pub mod aar;
 pub mod armory;
 pub mod board;
+pub mod chat;
 pub mod config;
 pub mod feed;
 pub mod filter;

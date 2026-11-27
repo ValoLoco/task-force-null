@@ -56,6 +56,8 @@ fn main() {
     }
 
     let store_ui = store.clone();
+    let repo_ui = repo.clone();
+    let web_url = cli.url.clone();
     Application::new().run(move |cx: &mut App| {
         let shutdown_quit = shutdown.clone();
         let _quit_sub = cx.on_app_quit(move |_cx| {
@@ -73,7 +75,11 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..Default::default()
             },
-            move |_, cx| cx.new(|cx| TocDashboard::new(store_ui.clone(), cx)),
+            move |_, cx| {
+                cx.new(|cx| {
+                    TocDashboard::new(store_ui.clone(), &repo_ui, web_url.clone(), cx)
+                })
+            },
         )
         .expect("open window");
         cx.activate(true);

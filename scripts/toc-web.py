@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import signal
 import subprocess
 import sys
@@ -16,13 +17,14 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
+import toc_chat  # noqa: E402
 import toc_lib  # noqa: E402
 
-ALLOWED_GET = {"/", "/api/state", "/events"}
+ALLOWED_GET = {"/", "/api/state", "/api/chat", "/events"}
 
 DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -471,6 +473,8 @@ class TOCWebContext:
         self.poll_interval = poll_interval
         self.lock = threading.Lock()
         self._log_offsets: dict[str, int] = {}
+        self._chat_lock = threading.Lock()
+        self._chat_listeners: list[queue.SimpleQueue[bytes]] = []
 
     def state_snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -516,6 +520,26 @@ class TOCWebContext:
             except OSError:
                 continue
         return events
+
+    def register_chat_listener(self) -> queue.SimpleQueue[bytes]:
+        q: queue.SimpleQueue[bytes] = queue.SimpleQueue()
+        with self._chat_lock:
+            self._chat_listeners.append(q)
+        return q
+
+    def unregister_chat_listener(self, q: queue.SimpleQueue[bytes]) -> None:
+        with self._chat_lock:
+            try:
+                self._chat_listeners.remove(q)
+            except ValueError:
+                pass
+
+    def broadcast_chat(self, entry: dict[str, Any]) -> None:
+        data = json.dumps(entry, separators=(",", ":"))
+        frame = ("event: chat\ndata: %s\n\n" % data).encode("utf-8")
+        with self._chat_lock:
+            for listener in self._chat_listeners:
+                listener.put(frame)
 
 
 def pid_alive(pid: int) -> bool:
@@ -615,6 +639,25 @@ def make_handler(ctx: TOCWebContext):
                 self.end_headers()
                 self.wfile.write(payload)
                 return
+            if path == "/api/chat":
+                qs = parse_qs(parsed.query)
+                mission = (qs.get("mission") or [""])[0]
+                limit_raw = (qs.get("limit") or [None])[0]
+                err, status = toc_chat.validate_mission_slug(ctx.repo_root, mission)
+                if err:
+                    self._json_error(status, err)
+                    return
+                limit = toc_chat.normalize_limit(limit_raw)
+                messages = toc_chat.read_messages(ctx.repo_root, mission, limit)
+                body = {"mission": mission, "messages": messages}
+                payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             if path == "/events":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -623,6 +666,57 @@ def make_handler(ctx: TOCWebContext):
                 self.end_headers()
                 self._sse_stream()
                 return
+
+        def do_POST(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/chat":
+                self.send_error(404)
+                return
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length <= 0:
+                self._json_error(400, "empty body")
+                return
+            if length > toc_chat.MAX_TEXT_BYTES + 4096:
+                self._json_error(413, "payload too large")
+                return
+            try:
+                raw = self.rfile.read(length)
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._json_error(400, "invalid json")
+                return
+            if not isinstance(body, dict):
+                self._json_error(400, "body must be a json object")
+                return
+            err, status, mission, text = toc_chat.validate_post_body(body)
+            if err:
+                self._json_error(status, err)
+                return
+            slug_err, slug_status = toc_chat.validate_mission_slug(ctx.repo_root, mission)
+            if slug_err:
+                self._json_error(slug_status, slug_err)
+                return
+            sender = body.get("sender", "user")
+            if not isinstance(sender, str) or sender not in toc_chat.ALLOWED_SENDERS:
+                sender = "user"
+            entry = toc_chat.append_message(ctx.repo_root, mission, sender, text)
+            ctx.broadcast_chat(entry)
+            payload = json.dumps(entry, separators=(",", ":")).encode("utf-8")
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _json_error(self, code: int, message: str) -> None:
+            payload = json.dumps({"error": message}, separators=(",", ":")).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
 
         def _sse_write(self, chunk: bytes) -> bool:
             try:
@@ -633,6 +727,7 @@ def make_handler(ctx: TOCWebContext):
                 return False
 
         def _sse_stream(self) -> None:
+            chat_q = ctx.register_chat_listener()
             try:
                 state = ctx.state_snapshot()
                 data = json.dumps(state, separators=(",", ":"))
@@ -641,7 +736,21 @@ def make_handler(ctx: TOCWebContext):
                 last_fp = ctx.fingerprint()
                 last_heartbeat = time.monotonic()
                 while True:
+                    while True:
+                        try:
+                            frame = chat_q.get_nowait()
+                        except queue.Empty:
+                            break
+                        if not self._sse_write(frame):
+                            return
                     time.sleep(ctx.poll_interval)
+                    while True:
+                        try:
+                            frame = chat_q.get_nowait()
+                        except queue.Empty:
+                            break
+                        if not self._sse_write(frame):
+                            return
                     fp = ctx.fingerprint()
                     if fp != last_fp:
                         last_fp = fp
@@ -664,6 +773,8 @@ def make_handler(ctx: TOCWebContext):
                             return
             except Exception:
                 return
+            finally:
+                ctx.unregister_chat_listener(chat_q)
 
     return Handler
 

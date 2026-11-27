@@ -1,3 +1,4 @@
+use crate::chat::{ChatMessage, ChatRing};
 use crate::log_ring::LogRing;
 use crate::types::{ActivityLine, LogLineEvent, TocState};
 use chrono::Utc;
@@ -18,6 +19,11 @@ pub enum FeedMode {
 pub enum StoreEvent {
     State(TocState),
     LogLine(LogLineEvent),
+    ChatMessage(ChatMessage),
+    ChatHistory {
+        mission: String,
+        messages: Vec<ChatMessage>,
+    },
     FeedPhase {
         phase: String,
         reconnect_secs: Option<u32>,
@@ -39,6 +45,7 @@ struct StoreInner {
     feed_phase: String,
     reconnect_secs: u32,
     selected_mission: Option<String>,
+    chat_rings: HashMap<String, ChatRing>,
     version: u64,
 }
 
@@ -91,6 +98,18 @@ impl TocStore {
                     &label,
                 );
             }
+            StoreEvent::ChatMessage(msg) => {
+                let slug = msg.mission.clone();
+                inner
+                    .chat_rings
+                    .entry(slug)
+                    .or_default()
+                    .push(msg);
+            }
+            StoreEvent::ChatHistory { mission, messages } => {
+                let ring = inner.chat_rings.entry(mission).or_default();
+                ring.merge_all(messages);
+            }
             StoreEvent::FeedPhase {
                 phase,
                 reconnect_secs,
@@ -124,8 +143,18 @@ impl TocStore {
             feed_phase: inner.feed_phase.clone(),
             reconnect_secs: inner.reconnect_secs,
             selected_mission: inner.selected_mission.clone(),
+            chat_rings: inner.chat_rings.clone(),
             version: inner.version,
         }
+    }
+
+    pub fn chat_for_mission(&self, mission: &str) -> Vec<ChatMessage> {
+        let inner = self.inner.read();
+        inner
+            .chat_rings
+            .get(mission)
+            .map(|r| r.messages().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub fn set_selected_mission(&self, slug: Option<String>) {
@@ -145,6 +174,7 @@ pub struct StoreSnapshot {
     pub feed_phase: String,
     pub reconnect_secs: u32,
     pub selected_mission: Option<String>,
+    pub chat_rings: HashMap<String, ChatRing>,
     pub version: u64,
 }
 

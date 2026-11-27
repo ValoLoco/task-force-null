@@ -2,6 +2,7 @@ use crate::feed::backoff::ReconnectBackoff;
 use crate::shutdown::ShutdownSignal;
 use crate::state::collect_state;
 use crate::store::{StoreEvent, TocStore};
+use crate::chat::ChatMessage;
 use crate::types::{LogLineEvent, TocState};
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
@@ -159,6 +160,11 @@ fn dispatch_sse(event: &str, data: &str, store: &Arc<TocStore>) {
                 let _ = store.apply(StoreEvent::LogLine(payload));
             }
         }
+        "chat" => {
+            if let Ok(payload) = serde_json::from_str::<ChatMessage>(data) {
+                let _ = store.apply(StoreEvent::ChatMessage(payload));
+            }
+        }
         _ if data.contains("\"missions\"") => {
             if let Ok(state) = serde_json::from_str::<TocState>(data) {
                 let _ = store.apply(StoreEvent::State(state));
@@ -198,5 +204,15 @@ mod tests {
     #[test]
     fn normalize_base_url() {
         assert_eq!(normalize_base("http://127.0.0.1:8765/"), "http://127.0.0.1:8765");
+    }
+
+    #[test]
+    fn parse_chat_payload() {
+        let store = TocStore::new(None);
+        let data = r#"{"ts":"2020-01-01T00:00:00Z","mission":"m","sender":"user","text":"hi"}"#;
+        parse_sse_payload("chat", data, &store);
+        let msgs = store.chat_for_mission("m");
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].text, "hi");
     }
 }
