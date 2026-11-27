@@ -59,7 +59,7 @@ grep -q '^\.env$' "${ROOT}/.gitignore" || { echo "FAIL: .gitignore missing .env"
 
 PROBE_PORT="${PROBE_PORT:-$(closed_probe_port)}"
 probe_env() {
-  env TFN_LLM_PROBE_HOST=127.0.0.1 "TFN_LLM_PROBE_PORT=${PROBE_PORT}" "$@"
+  env TFN_LLM_PROBE_HOST=127.0.0.1 "TFN_LLM_PROBE_PORT=${PROBE_PORT}" TFN_LLM_MODEL_SCAN=0 "$@"
 }
 
 OUT="$(probe_env "${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-llm --skip-keys --skip-deploy --harness generic 2>&1)" || true
@@ -125,7 +125,7 @@ python3 "$MOCK_SCRIPT" "$MOCK_PORT" &
 MOCK_PID=$!
 sleep 0.3
 
-MOCK_OUT="$(env TFN_LLM_PROBE_HOST=127.0.0.1 "TFN_LLM_PROBE_PORT=${MOCK_PORT}" \
+MOCK_OUT="$(env TFN_LLM_PROBE_HOST=127.0.0.1 "TFN_LLM_PROBE_PORT=${MOCK_PORT}" TFN_LLM_MODEL_SCAN=0 \
   "${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-keys --skip-deploy --harness generic 2>&1)" || true
 echo "$MOCK_OUT" | grep -q 'detected local model server at' \
   || { echo "FAIL: mock LLM server not detected" >&2; echo "$MOCK_OUT"; exit 1; }
@@ -136,5 +136,19 @@ kill -TERM "$MOCK_PID" 2>/dev/null || true
 wait "$MOCK_PID" 2>/dev/null || true
 MOCK_PID=""
 rm -f "$MOCK_SCRIPT"
+
+SCAN_TMP="$(mktemp -d)"
+touch "${SCAN_TMP}/probe-dummy.gguf"
+SEARCH_OUT="$(env TFN_LLM_PROBE_HOST=127.0.0.1 "TFN_LLM_PROBE_PORT=${PROBE_PORT}" \
+  "TFN_LLM_SEARCH_DIRS=${SCAN_TMP}" \
+  "${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-keys --skip-deploy --harness generic 2>&1)" || true
+rm -rf "$SCAN_TMP"
+echo "$SEARCH_OUT" | grep -q 'detected local model at' \
+  || { echo "FAIL: TFN_LLM_SEARCH_DIRS did not detect dummy .gguf" >&2; echo "$SEARCH_OUT"; exit 1; }
+if echo "$SEARCH_OUT" | grep -E -q 'huggingface\.co|would run: curl'; then
+  echo "FAIL: TFN_LLM_SEARCH_DIRS detection should skip install without download" >&2
+  echo "$SEARCH_OUT"
+  exit 1
+fi
 
 echo "test_setup: ok"
