@@ -1,0 +1,36 @@
+[package]
+name = "tfn-toc-gpui"
+version = "0.1.0"
+edition = "2021"
+description = "Optional native GPUI TOC dashboard for Task Force Null"
+license = "MIT"
+publish = false
+
+[features]
+default = []
+desktop = ["dep:gpui", "dep:clap"]
+
+[lib]
+name = "tfn_toc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tfn-toc-gpui"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[dependencies]
+gpui = { version = "0.2.2", optional = true }
+notify = "7.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+clap = { version = "4", features = ["derive", "env"], optional = true }
+parking_lot = "0.12"
+[dev-dependencies]
+tempfile = "3"
+
+[patch.crates-io]
+xattr = { path = "patches/xattr" }

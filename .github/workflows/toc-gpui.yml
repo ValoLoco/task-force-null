@@ -1,0 +1,36 @@
+name: toc-gpui
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  toc-gpui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential g++ libfontconfig1-dev libfreetype6-dev libssl-dev \
+            libwayland-dev libvulkan-dev libx11-dev libxi-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev \
+            pkg-config libstdc++-13-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo test (headless)
+        working-directory: toc-gpui
+        run: cargo test
+
+      - name: cargo check desktop
+        working-directory: toc-gpui
+        env:
+          RUSTFLAGS: -C link-arg=-L/usr/lib/gcc/x86_64-linux-gnu/13 -C link-arg=-lstdc++
+        run: cargo check --features desktop
