@@ -7,7 +7,7 @@ Lean, redeployable **Special Forces AI agent team** template ([`ValoLoco/task-fo
 Copy into any AI harness (Hermes, Grok Bot, Claude, Codex, Cursor, etc.):
 
 ```text
-You are Task Force Null: read AGENTS.md, brain/doctrine.md, and profiles/{lead,recon,builder,medic-qa,comms,command}.md; clone or vendor https://github.com/ValoLoco/task-force-null into this project; run scripts/deploy-squad.sh <slug> "<one-line objective>" and scripts/start.sh; operate only within missions/<slug>/mission.md left/right limits with one board.md owner per task; use scripts/router.py for routing; ECC is read-only at /workspace/ecc (one skill at a time via /workspace/ecc/search.sh only, never copy ECC into the repo, never run ECC installers or hooks); human approval for all external publish and destructive actions.
+You are Task Force Null: read AGENTS.md, brain/doctrine.md, and profiles/{lead,recon,builder,medic-qa,comms,command}.md; clone https://github.com/ValoLoco/task-force-null into this project; run scripts/deploy-squad.sh <slug> "<one-line objective>" (syncs armory/ecc via scripts/sync-armory.sh) and scripts/start.sh; operate within missions/<slug>/mission.md limits with one board.md owner per task; use scripts/router.py for routing; ECC is read-only (prefer /workspace/ecc/search.sh online, armory/ecc offline, one skill at a time, never copy ECC into the repo, never run ECC installers or hooks); human approval for all external publish and destructive actions.
 ```
 
 ## Special Forces parallel
@@ -27,25 +27,27 @@ Profiles live in `profiles/` and stay **domain-agnostic**. Project intent lives 
 
 ```
 AGENTS.md          # Unit persona, chain of command, ECC rule
+armory/ecc/        # Vendored affaan-m/ECC (offline read-only reference)
 profiles/          # Six lean operator profiles (~20 lines each)
 brain/             # Shared memory: doctrine, AARs, playbooks
 missions/          # Per-deployment context (_template + active slugs)
-scripts/           # Router, deploy, start, AAR (bash + Python 3 stdlib)
+scripts/           # Router, deploy, sync-armory, start, AAR
 systemd/           # User unit template for persistence
 ```
 
-## ECC read-only armory
+## ECC armory (`armory/ecc/`)
 
-Task Force Null does **not** ship specialist skills. When depth is needed, operators use the host **ECC armory** at `/workspace/ecc`:
+The full [affaan-m/ECC](https://github.com/affaan-m/ECC) repository is vendored under **`armory/ecc/`** for offline use (agents, skills, docs, tests, scripts). The synced commit is recorded in `armory/ecc/PINNED_SHA`.
 
 | Rule | Detail |
 |------|--------|
-| Location | `/workspace/ecc` on the workspace host (outside this repo) |
-| Discovery | `/workspace/ecc/search.sh <query>` returns candidate skill paths |
-| Consumption | Read the chosen skill **in place**; apply its guidance for the active task only |
-| Prohibited | Copying ECC files into this repo, duplicating skills under `brain/playbooks/`, running ECC install scripts, or enabling ECC hooks |
+| Online sync | `./scripts/deploy-squad.sh` runs `scripts/sync-armory.sh --allow-offline` unless `SKIP_SYNC_ARMORY=1` |
+| Manual sync | `./scripts/sync-armory.sh` (add `--allow-offline` to keep local copy if upstream is down) |
+| Discovery online | Prefer `/workspace/ecc/search.sh <query>` when the host armory is mounted |
+| Discovery offline | Browse and read skills under `armory/ecc/` one at a time |
+| Prohibited | Never run ECC `install.sh`, `install.ps1`, hooks, or copy skill bodies into `brain/` or missions |
 
-Medic QA blocks merges that embed ECC skill bodies. Lead logs which ECC skill was consulted in the task handoff packet when it influenced scope or implementation.
+Medic QA blocks merges that embed ECC skill bodies. Lead logs which ECC skill was consulted when it influenced scope or implementation.
 
 ## Best-fit-first model routing
 

@@ -38,11 +38,13 @@ At session start: read this file, `brain/doctrine.md`, active `mission.md`, `int
 
 ## ECC Armory (read-only)
 
-**Path:** `/workspace/ecc` (host-local, not part of this repo)
+**Vendored offline copy:** `armory/ecc/` in this repo (full [affaan-m/ECC](https://github.com/affaan-m/ECC) tree, pinned at `armory/ecc/PINNED_SHA`). Online deploys refresh it via `scripts/sync-armory.sh`.
 
-- **Read-only:** consult skills in place; never copy skill files into this repository or into `brain/playbooks/`.
-- **One skill at a time:** use `/workspace/ecc/search.sh` to locate and load a single skill when specialist depth is required; cite the skill name in the handoff packet.
-- **Forbidden:** ECC installers, hooks, mutating scripts, or vendoring ECC content into mission folders.
+**Live host copy (preferred when online):** `/workspace/ecc` with `/workspace/ecc/search.sh`.
+
+- **Read-only:** consult skills and agent docs in place; never copy skill bodies into this repo or into `brain/playbooks/`.
+- **One skill at a time:** prefer `/workspace/ecc/search.sh` when online; when offline, locate skills under `armory/ecc/` manually (one skill per task). Cite the skill name in the handoff packet.
+- **Forbidden:** running ECC installers or hooks (`install.sh`, `install.ps1`, etc.), mutating `armory/ecc/`, or vendoring ECC text into mission folders.
 - **Lead** approves ECC lookups that affect scope or compliance; **medic-qa** rejects commits that embed ECC skill text.
 
 ## Model Routing (best-fit-first)

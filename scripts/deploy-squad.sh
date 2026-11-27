@@ -59,6 +59,11 @@ while IFS= read -r envfile; do
   fi
 done < <(find "${MISSIONS}" -mindepth 2 -maxdepth 2 -name 'squad.env' 2>/dev/null)
 
+if [[ "${SKIP_SYNC_ARMORY:-0}" != "1" ]]; then
+  "${REPO_ROOT}/scripts/sync-armory.sh" --allow-offline || \
+    echo "note: sync-armory failed unexpectedly"
+fi
+
 if [[ "${SKIP_DETECT_MODELS:-0}" != "1" ]]; then
   MISSION_SLUG="${SLUG}" "${REPO_ROOT}/scripts/detect-models.sh" --slug "${SLUG}" || \
     echo "note: detect-models.sh skipped or failed (offline OK); run manually later"
