@@ -31,7 +31,8 @@ armory/ecc/        # Vendored affaan-m/ECC (offline read-only reference)
 profiles/          # Six lean operator profiles (~20 lines each)
 brain/             # Shared memory: doctrine, AARs, playbooks
 missions/          # Per-deployment context (_template + active slugs)
-scripts/           # Router, deploy, sync-armory, start, AAR
+scripts/           # setup, router, deploy, sync-armory, start, AAR
+harnesses/         # Hermes / PyAgent install notes
 systemd/           # User unit template for persistence
 ```
 
@@ -61,7 +62,27 @@ Medic QA blocks merges that embed ECC skill bodies. Lead logs which ECC skill wa
 2. **Rule-of-Two** (`brain/doctrine.md`): the same fix for the same friction class must appear in two AARs before Command promotes a **playbook** under `brain/playbooks/` (squad-native only, never ECC copies).
 3. Mission folders swap per deploy; profiles and `AGENTS.md` stay stable.
 
-## Deploy a new squad (new project)
+## Guided setup (`scripts/setup.sh`)
+
+Interactive first-time bootstrap (idempotent, safe to re-run):
+
+```bash
+git clone https://github.com/ValoLoco/task-force-null.git
+cd task-force-null
+./scripts/setup.sh
+```
+
+| Mode | Usage |
+|------|--------|
+| Dry run | `./scripts/setup.sh --dry-run` (prints commands, no installs or downloads) |
+| CI / automation | `./scripts/setup.sh --non-interactive --skip-llm --harness cursor --mission-slug my-squad` |
+| Skip duplicate sync | Deploy path uses `SKIP_SYNC_ARMORY=1` / `SKIP_DETECT_MODELS=1` when `deploy-squad.sh` runs inside setup |
+
+**Flow:** detect harness (Hermes, PyAgent, Claude, Grok, Cursor) → optional harness install ([`harnesses/`](harnesses/README.md)) → optional local LLM on `127.0.0.1:8080` (reuses `/workspace/local-llm` when present, no re-download of the 6.5 GB Inkling quant) → optional API keys into gitignored `.env` (`chmod 600`, empty input keeps existing keys) → `sync-armory.sh`, `detect-models.sh`, `deploy-squad.sh`, `start.sh`.
+
+Secrets never print to logs. See [`.env.example`](.env.example).
+
+## Deploy a new squad (manual)
 
 ```bash
 git clone https://github.com/ValoLoco/task-force-null.git
