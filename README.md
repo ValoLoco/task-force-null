@@ -1,4 +1,20 @@
+```
+==============================================================================
+                         BUENATURA
+  _____         _     _____ ____  _____ _____   __     ______  _     _
+ |  __ \       | |   / ____/ ___||  ___| ____|  \ \   / /___ \| |   | |
+ |  |  | | __ _ | | _| |   \___ \| |_  |  _|     \ \ / /   __) | |   | |
+ |  |  | |/ _` || || | |    ___) |  _| | |___     \ V /   / __/| |   | |
+ | |_|_| \__,_||_| \_____|____/|_|   |_____|     \_/   |_____||_|___|_|
+                    T A S K   F O R C E   N U L L
+==============================================================================
+```
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 # Task Force Null
+
+Released under the [MIT License](LICENSE) (Copyright 2026 Valentin Kranz).
 
 Lean, redeployable **Special Forces AI agent team** template ([`ValoLoco/task-force-null`](https://github.com/ValoLoco/task-force-null)). One five-operator squad plus Command for multi-squad work, shared `brain/`, swappable `missions/<slug>/` per deployment.
 
@@ -118,3 +134,7 @@ loginctl enable-linger "$USER"
 ## Example mission
 
 See `missions/example-mission/` for a minimal populated mission, or `./scripts/deploy-squad.sh` from `_template`.
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
