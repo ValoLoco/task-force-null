@@ -1,5 +1,16 @@
 # Doctrine
 
+## Default playbooks (session start)
+
+Every operator reads at session start:
+
+| Playbook | Use |
+|----------|-----|
+| `brain/playbooks/ooda-loop.md` | Standing decision cycle (Observe, Orient, Decide, Act) on every task turn. |
+| `brain/playbooks/dmaic-loop.md` | Recursive self-improvement (Define through Control); log AARs and feed Rule-of-Two promotion. |
+
+Also read `brain/playbooks/handoff-protocol.md` when handing off work.
+
 ## Standing Rules
 
 1. YAGNI and Carbon Fiber: smallest working solution, stdlib and POSIX only in this template tooling.

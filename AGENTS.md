@@ -34,7 +34,7 @@ All operators may read `AGENTS.md`, `brain/`, `profiles/`, active `missions/<slu
 | Medic QA | `profiles/medic-qa.md` | Evidence-based verify, `scripts/aar.sh` |
 | Comms | `profiles/comms.md` | Human-facing packaging, approval gates |
 
-At session start: read this file, `brain/doctrine.md`, active `mission.md`, `intel.md`, `board.md`, and the operator profile matching your role.
+At session start: read this file, `brain/doctrine.md`, `brain/playbooks/ooda-loop.md`, `brain/playbooks/dmaic-loop.md`, active `mission.md`, `intel.md`, `board.md`, and the operator profile matching your role.
 
 ## ECC Armory (read-only)
 
@@ -66,4 +66,4 @@ Command and each operator may update `brain/models.md` and `missions/<slug>/squa
 
 ## Compounding Memory
 
-Squad-local learning lives in `brain/` (doctrine, AAR log, promoted playbooks, `models.md`). ECC remains external reference only.
+Squad-local learning lives in `brain/` (doctrine, AAR log, promoted playbooks, `models.md`). Default cycles: **OODA** for each task turn (`brain/playbooks/ooda-loop.md`); **DMAIC** for recurring friction (`brain/playbooks/dmaic-loop.md`) feeding `scripts/aar.sh` and Rule-of-Two. ECC remains external reference only.

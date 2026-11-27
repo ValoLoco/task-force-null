@@ -134,6 +134,7 @@ AGENTS.md          # Unit persona, chain of command, ECC rule
 armory/ecc/        # Vendored affaan-m/ECC (offline read-only reference)
 profiles/          # Six lean operator profiles (~20 lines each)
 brain/             # Shared memory: doctrine, AARs, playbooks
+  playbooks/       # handoff-protocol.md, ooda-loop.md, dmaic-loop.md (+ promoted)
 missions/          # Per-deployment context (_template + active slugs)
 scripts/           # setup.sh, setup.ps1, router, deploy, sync-armory, verify
 harnesses/         # Hermes / Pi install notes
