@@ -13,6 +13,9 @@ DELEGATION_SET=""
 WEB=0
 WEB_PORT=""
 NO_OPEN=0
+GPUI=0
+GPUI_URL=""
+MISSION_SLUG=""
 
 usage() {
   cat <<EOF
@@ -26,6 +29,8 @@ Options:
   --set-autonomous true|false     Set AUTONOMOUS_MODE in toc-config and active squad.env
   --toggle                        Prompt for blockers, external, and autonomous
   --web                           Localhost real-time web TOC (scripts/toc-web.py)
+  --gpui|--native                 Optional native GPUI desktop TOC (requires Rust/Cargo)
+  --url URL                       With --gpui: connect to web TOC SSE at URL
   --port N                        Web server port (0 = ephemeral). Env: TFN_TOC_PORT
   --no-open                       Do not open a browser for --web
   --repo-root PATH                Read and write this repo root (tests)
@@ -57,6 +62,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --toggle) TOGGLE=1; MUTATE=1; shift ;;
     --web) WEB=1; shift ;;
+    --gpui|--native) GPUI=1; shift ;;
+    --url)
+      GPUI_URL="${2:-}"
+      shift 2
+      ;;
     --port)
       WEB_PORT="${2:-}"
       shift 2
@@ -64,7 +74,14 @@ while [[ $# -gt 0 ]]; do
     --no-open) NO_OPEN=1; shift ;;
     --repo-root) REPO_ROOT="$2"; shift 2 ;;
     -h|--help) usage ;;
-    *) echo "unknown arg: $1" >&2; usage ;;
+    *)
+      if [[ "$1" == --* ]]; then
+        echo "unknown arg: $1" >&2
+        usage
+      fi
+      MISSION_SLUG="$1"
+      shift
+      ;;
   esac
 done
 
@@ -76,6 +93,18 @@ fi
 if ! command -v python3 >/dev/null 2>&1; then
   echo "toc: python3 is required" >&2
   exit 1
+fi
+
+if [[ "$GPUI" -eq 1 && "$WEB" -eq 1 ]]; then
+  echo "toc: use either --web or --gpui, not both" >&2
+  exit 2
+fi
+
+if [[ "$GPUI" -eq 1 ]]; then
+  GPUI_ARGS=(--repo-root "$REPO_ROOT")
+  [[ -n "$GPUI_URL" ]] && GPUI_ARGS+=(--url "$GPUI_URL")
+  [[ -n "$MISSION_SLUG" ]] && GPUI_ARGS+=(--mission "$MISSION_SLUG")
+  exec "${SCRIPT_DIR}/toc_gpui.sh" "${GPUI_ARGS[@]}"
 fi
 
 if [[ "$WEB" -eq 1 ]]; then

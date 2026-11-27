@@ -165,12 +165,25 @@ GitHub Actions runs the same script on pushes and pull requests targeting `main`
 ./scripts/toc.sh --watch --interval 15
 ./scripts/toc.sh --web
 ./scripts/toc.sh --web --port 8765 --no-open
+./scripts/toc.sh --gpui
+./scripts/toc.sh --native setup-mission
+./scripts/toc.sh --gpui --url http://127.0.0.1:8765
 ./scripts/toc.sh --set-delegation blockers=false external=false
 ./scripts/toc.sh --set-autonomous false
 ./scripts/toc.sh --toggle
 ```
 
-`--web` runs `scripts/toc-web.py` on `127.0.0.1` only. It prints `http://127.0.0.1:<PORT>` (use `--port 0` or omit port for an ephemeral port). Set `TFN_TOC_PORT` to pick a port. Use `--no-open` to skip the browser. Real-time updates use Server-Sent Events. Stream operator output live with `./scripts/op-log.sh <mission> <role> -- <cmd>` (writes UTC-timestamped lines under `missions/<mission>/logs/<role>.log` for the dashboard). If the web server is unavailable, use the text dashboard above.
+| Surface | Command | Requires |
+|---------|---------|----------|
+| Terminal (default) | `./scripts/toc.sh` | Python 3 only |
+| Localhost web | `./scripts/toc.sh --web` | Python 3 only |
+| Native GPUI desktop | `./scripts/toc.sh --gpui` | Rust/Cargo, GPU stack (see [`toc-gpui/README.md`](toc-gpui/README.md)) |
+
+`--web` runs `scripts/toc-web.py` on `127.0.0.1` only. It prints `http://127.0.0.1:<PORT>` (use `--port 0` or omit port for an ephemeral port). Set `TFN_TOC_PORT` to pick a port. Use `--no-open` to skip the browser. Real-time updates use Server-Sent Events.
+
+`--gpui` (alias `--native`) launches the optional Rust GPUI app in `toc-gpui/`. Default feed watches the repo filesystem. Pass `--url` to follow the web TOC SSE stream instead.
+
+Stream operator output live with `./scripts/op-log.sh <mission> <role> -- <cmd>` (writes UTC-timestamped lines under `missions/<mission>/logs/<role>.log` for the dashboard). If the web or native dashboard is unavailable, use the text dashboard above.
 
 Ask Command for `give me the dashboard` or `TOC`. Command runs `./scripts/toc.sh` and relays the output.
 

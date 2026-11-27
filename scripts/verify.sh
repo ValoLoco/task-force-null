@@ -124,6 +124,7 @@ check_no_em_dashes() {
     find "$REPO_ROOT" \
       -path "${REPO_ROOT}/.git" -prune -o \
       -path "${REPO_ROOT}/armory/ecc" -prune -o \
+      -path "${REPO_ROOT}/toc-gpui/target" -prune -o \
       -type f -print 2>/dev/null |
       while IFS= read -r f; do
         if grep -qF "$emdash" "$f" 2>/dev/null; then
