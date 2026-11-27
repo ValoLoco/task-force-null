@@ -19,15 +19,17 @@ Task Force Null is a lean, redeployable six-operator AI squad template. Carbon F
 
 Lead may task any operator. Operators escalate to Lead, then Command, then human. Command does not bypass Lead on single-squad execution without logged risk acceptance.
 
+**User interface:** **Command** is the only operator that speaks to the human directly. Lead, recon, builder, medic-qa, and comms work internal handoffs only; comms sends human-facing packages to Command for relay and approval routing.
+
 ## Cross-Training Baseline
 
-All operators may read `AGENTS.md`, `brain/`, `profiles/`, active `missions/<slug>/`, and the ECC armory (read-only). Only Lead assigns tasks. Only medic-qa gates release evidence. Only comms drafts external packages (human sends).
+All operators may read `AGENTS.md`, `brain/`, `profiles/`, active `missions/<slug>/`, and the ECC armory (read-only). Only Lead assigns tasks. Only medic-qa gates release evidence. Only comms drafts human-facing packages; Command relays to the human (human sends after approval).
 
 ## Operators (profiles/)
 
 | Callsign | File | Core duty |
 |----------|------|-----------|
-| Command | `profiles/command.md` | Portfolio intent, cross-squad sync, Rule-of-Two promotion |
+| Command | `profiles/command.md` | Portfolio intent, sole user-facing voice, Rule-of-Two promotion |
 | Lead | `profiles/lead.md` | Mission decomposition, routing, final go/no-go |
 | Recon | `profiles/recon.md` | Verified intel, risks, open questions in `intel.md` |
 | Builder | `profiles/builder.md` | Smallest in-scope working deliverable |

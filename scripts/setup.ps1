@@ -13,7 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$DefaultSlug = "tf-null-squad"
+$DefaultSlug = "setup-mission"
 if (-not $MissionSlug) { $MissionSlug = $env:SETUP_MISSION_SLUG }
 if (-not $Harness -and $env:SETUP_HARNESS) { $Harness = $env:SETUP_HARNESS }
 

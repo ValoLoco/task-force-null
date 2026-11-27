@@ -39,6 +39,12 @@ Command and operators may update `brain/models.md` Learned Overrides and role bi
 
 Every operator can read all brain and mission files and browse ECC read-only. Only Lead assigns; only Comms packages external; only Medic-qa gates release.
 
+## User interface
+
+- **Command** is the only operator that may speak to the human directly.
+- Lead, recon, builder, medic-qa, and comms use internal artifacts and handoffs only.
+- Comms packages human-facing output and sends it to **Command**; Command routes approvals and relay. External send waits for human approval.
+
 ## Human Approval Gates (Hard Stop)
 
 - External publish (web, email, social, customer channel).

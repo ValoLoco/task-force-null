@@ -41,7 +41,7 @@ Dry run (no installs or `.env` writes): add `--dry-run` on bash or `-DryRun` on 
 Copy into any AI harness (Hermes, Pi, Grok Bot, Claude, Cursor, etc.) when you **do not** run `setup.sh`:
 
 ```text
-You are Task Force Null: read AGENTS.md, brain/doctrine.md, and profiles/{lead,recon,builder,medic-qa,comms,command}.md; clone https://github.com/ValoLoco/task-force-null into this project; run scripts/deploy-squad.sh <slug> "<one-line objective>" (syncs armory/ecc via scripts/sync-armory.sh) and scripts/start.sh; operate within missions/<slug>/mission.md limits with one board.md owner per task; use scripts/router.py for routing; ECC is read-only (prefer /workspace/ecc/search.sh online, armory/ecc offline, one skill at a time, never copy ECC into the repo, never run ECC installers or hooks); human approval for all external publish and destructive actions.
+You are Task Force Null: read AGENTS.md, brain/doctrine.md, and profiles/{lead,recon,builder,medic-qa,comms,command}.md; clone https://github.com/ValoLoco/task-force-null into this project; run scripts/start.sh and complete missions/setup-mission/ first (Command is the only user-facing agent; other operators never speak to the user); then scripts/deploy-squad.sh <slug> "<one-line objective>" (syncs armory/ecc via scripts/sync-armory.sh) for follow-on missions; operate within missions/<slug>/mission.md limits with one board.md owner per task; use scripts/router.py for routing; ECC is read-only (prefer /workspace/ecc/search.sh online, armory/ecc offline, one skill at a time, never copy ECC into the repo, never run ECC installers or hooks); human approval for all external publish and destructive actions; Builder -> medic-qa -> comms -> Command -> human for external packages.
 ```
 
 ## Special Forces parallel
@@ -136,6 +136,8 @@ profiles/          # Six lean operator profiles (~20 lines each)
 brain/             # Shared memory: doctrine, AARs, playbooks
   playbooks/       # handoff-protocol.md, ooda-loop.md, dmaic-loop.md (+ promoted)
 missions/          # Per-deployment context (_template + active slugs)
+  setup-mission/   # Default first bootstrap (ACTIVE=1 in template repo)
+  example-mission/ # Sample mission (inactive by default)
 scripts/           # setup.sh, setup.ps1, router, deploy, sync-armory, verify
 harnesses/         # Hermes / Pi install notes
 systemd/           # User unit template for persistence
@@ -188,7 +190,7 @@ loginctl enable-linger "$USER"
 
 ## Example mission
 
-See `missions/example-mission/` for a minimal populated mission, or `./scripts/deploy-squad.sh` from `_template`.
+Fresh clones start with **`missions/setup-mission/`** (bootstrap checklist). See `missions/example-mission/` for a sample follow-on mission, or `./scripts/deploy-squad.sh` from `_template`.
 
 ## License
 
