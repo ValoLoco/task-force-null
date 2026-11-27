@@ -18,9 +18,21 @@ Released under the [MIT License](LICENSE) (Copyright 2026 Valentin Kranz).
 
 Lean, redeployable **Special Forces AI agent team** template ([`ValoLoco/task-force-null`](https://github.com/ValoLoco/task-force-null)). One five-operator squad plus Command for multi-squad work, shared `brain/`, swappable `missions/<slug>/` per deployment.
 
-## One-line deploy prompt
+## Quick install (one line)
 
-Copy into any AI harness (Hermes, Grok Bot, Claude, Codex, Cursor, etc.):
+Clone once, then run setup for your OS.
+
+| OS | One-line setup |
+|----|----------------|
+| **Linux / macOS** | `git clone --depth 1 https://github.com/ValoLoco/task-force-null.git && cd task-force-null && ./scripts/setup.sh` |
+| **Windows PowerShell** | `git clone --depth 1 https://github.com/ValoLoco/task-force-null.git; cd task-force-null; .\scripts\setup.ps1` |
+| **Windows cmd / double-click** | Clone the repo, then run `scripts\setup.bat` (forwards to `setup.ps1`) |
+
+Dry run (no installs or `.env` writes): add `--dry-run` on bash or `-DryRun` on PowerShell.
+
+## One-line deploy prompt (existing harness, no setup)
+
+Copy into any AI harness (Hermes, Pi, Grok Bot, Claude, Cursor, etc.) when you **do not** run `setup.sh`:
 
 ```text
 You are Task Force Null: read AGENTS.md, brain/doctrine.md, and profiles/{lead,recon,builder,medic-qa,comms,command}.md; clone https://github.com/ValoLoco/task-force-null into this project; run scripts/deploy-squad.sh <slug> "<one-line objective>" (syncs armory/ecc via scripts/sync-armory.sh) and scripts/start.sh; operate within missions/<slug>/mission.md limits with one board.md owner per task; use scripts/router.py for routing; ECC is read-only (prefer /workspace/ecc/search.sh online, armory/ecc offline, one skill at a time, never copy ECC into the repo, never run ECC installers or hooks); human approval for all external publish and destructive actions.
@@ -39,6 +51,39 @@ You are Task Force Null: read AGENTS.md, brain/doctrine.md, and profiles/{lead,r
 
 Profiles live in `profiles/` and stay **domain-agnostic**. Project intent lives under `missions/`. Unit soul and chain of command: **`AGENTS.md`**.
 
+## Guided setup flow (`setup.sh` / `setup.ps1`)
+
+Interactive first-time bootstrap. Idempotent and safe to re-run (preserves existing `.env` keys when prompts are left empty).
+
+| Step | What happens |
+|------|----------------|
+| 1. Harness detection | Detects Hermes, **Pi Coding Agent** (`pi`), Claude, Grok, Cursor (see [`harnesses/`](harnesses/README.md)). |
+| 2. Harness install (optional) | **Hermes:** `pip install --user hermes-agent`. **Pi:** Linux/macOS `curl -fsSL https://pi.dev/install.sh \| sh` then `pi install npm:pi-agents` (pulls durable sub-agents); Windows `irm https://pi.dev/install.ps1 \| iex` then `pi install npm:pi-agents`. |
+| 3. Local LLM (optional) | `llama-server` + Inkling 2 Mini `Inkling-2-Mini-AD-IQ1_S.gguf` (6.5 GB) on `127.0.0.1:8080`. Reuses `LOCAL_LLM_DIR` or `/workspace/local-llm` when weights exist (no re-download). |
+| 4. API keys (optional) | Masked prompts for `NVIDIA_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY` into gitignored `.env` (empty input keeps existing values; `chmod 600` on Unix). |
+| 5. Bootstrap | `sync-armory.sh --allow-offline`, `detect-models.sh`, `deploy-squad.sh`, `start.sh`. |
+
+| Mode | Usage |
+|------|--------|
+| Dry run | `./scripts/setup.sh --dry-run` or `.\scripts\setup.ps1 -DryRun` |
+| CI / automation | `./scripts/setup.sh --non-interactive --skip-llm --harness cursor --mission-slug my-squad` |
+| Skip bootstrap | `--skip-deploy` / `-SkipDeploy` |
+
+On **Windows Git Bash**, `setup.sh` delegates to `setup.ps1` when PowerShell is available (`SETUP_BASH_ONLY=1` forces bash-only).
+
+Secrets never print to logs. See [`.env.example`](.env.example).
+
+## Cross-platform notes
+
+| Topic | Linux | macOS | Windows |
+|-------|-------|-------|---------|
+| Setup entry | `./scripts/setup.sh` | same | `setup.ps1`, `setup.bat`, or Git Bash `setup.sh` |
+| Package managers | `apt-get`, `dnf`, `pacman` (auto-detected) | `brew` | `winget`, `choco` |
+| Pi install | `curl -fsSL https://pi.dev/install.sh \| sh` + `pi install npm:pi-agents` | same | `irm https://pi.dev/install.ps1 \| iex` + `pi install npm:pi-agents` |
+| `llama.cpp` binary | Distro package or cmake build; binary `llama-server` | `brew install llama.cpp` (Metal or CPU) | `winget install ggml.llamacpp` or `choco install llama-cpp` / `llama-server.exe` |
+| Line endings | `.gitattributes`: `*.sh` / `*.py` LF; `*.ps1` / `*.bat` CRLF | same | same |
+| Bootstrap scripts | Native bash | Native bash | PowerShell calls `bash` for `sync-armory`, `detect-models`, `deploy-squad` when Git Bash is installed |
+
 ## Fast clone / clone size
 
 | Goal | Command |
@@ -50,15 +95,31 @@ Profiles live in `profiles/` and stay **domain-agnostic**. Project intent lives 
 
 Restore a full offline armory anytime with `./scripts/sync-armory.sh` or `git sparse-checkout disable` after a sparse clone.
 
+## ECC armory (`armory/ecc/`)
+
+The full [affaan-m/ECC](https://github.com/affaan-m/ECC) repository is vendored under **`armory/ecc/`** for **offline** use (agents, skills, docs, tests, scripts). The synced commit is recorded in `armory/ecc/PINNED_SHA`.
+
+| Rule | Detail |
+|------|--------|
+| Online deploy | `./scripts/deploy-squad.sh` runs `scripts/sync-armory.sh --allow-offline` unless `SKIP_SYNC_ARMORY=1` |
+| Manual sync | `./scripts/sync-armory.sh` (add `--allow-offline` to keep local copy if upstream is down) |
+| Discovery online | Prefer `/workspace/ecc/search.sh <query>` when the host armory is mounted |
+| Discovery offline | Browse and read skills under `armory/ecc/` one at a time |
+| Prohibited | Never run ECC `install.sh`, `install.ps1`, hooks, or copy skill bodies into `brain/` or missions |
+
+Use shallow or sparse clone (above) when you only need the squad template online first; sync or sparse-checkout restore when you need offline ECC.
+
+Medic QA blocks merges that embed ECC skill bodies. Lead logs which ECC skill was consulted when it influenced scope or implementation.
+
 ## Verification (`scripts/verify.sh`)
 
-One command runs shell syntax checks, router smoke tests, setup/detect-models tests, profile line limits, branding checks, and an owned-file em-dash scan (excluding `armory/ecc/`). Default `VERIFY_SKIP_ONLINE_SYNC=1` avoids upstream ECC sync during verify so CI and offline runs stay deterministic; unset it locally to exercise live `sync-armory.sh`.
+One command runs shell syntax checks, router and setup smoke tests, profile line limits, branding checks, and an owned-file em-dash scan (excluding `armory/ecc/`). Default `VERIFY_SKIP_ONLINE_SYNC=1` avoids upstream ECC sync during verify so CI and offline runs stay deterministic; unset it locally to exercise live `sync-armory.sh`.
 
 ```bash
 ./scripts/verify.sh
 ```
 
-GitHub Actions runs the same script on pushes and pull requests targeting `main` (see `.github/workflows/verify.yml`).
+GitHub Actions runs the same script on pushes and pull requests targeting `main` (`.github/workflows/verify.yml`: `actions/checkout@v4`, Python 3.11, `./scripts/verify.sh`).
 
 ## Top-level structure
 
@@ -68,24 +129,10 @@ armory/ecc/        # Vendored affaan-m/ECC (offline read-only reference)
 profiles/          # Six lean operator profiles (~20 lines each)
 brain/             # Shared memory: doctrine, AARs, playbooks
 missions/          # Per-deployment context (_template + active slugs)
-scripts/           # setup, router, deploy, sync-armory, start, AAR
-harnesses/         # Hermes / PyAgent install notes
+scripts/           # setup.sh, setup.ps1, router, deploy, sync-armory, verify
+harnesses/         # Hermes / Pi install notes
 systemd/           # User unit template for persistence
 ```
-
-## ECC armory (`armory/ecc/`)
-
-The full [affaan-m/ECC](https://github.com/affaan-m/ECC) repository is vendored under **`armory/ecc/`** for offline use (agents, skills, docs, tests, scripts). The synced commit is recorded in `armory/ecc/PINNED_SHA`.
-
-| Rule | Detail |
-|------|--------|
-| Online sync | `./scripts/deploy-squad.sh` runs `scripts/sync-armory.sh --allow-offline` unless `SKIP_SYNC_ARMORY=1` |
-| Manual sync | `./scripts/sync-armory.sh` (add `--allow-offline` to keep local copy if upstream is down) |
-| Discovery online | Prefer `/workspace/ecc/search.sh <query>` when the host armory is mounted |
-| Discovery offline | Browse and read skills under `armory/ecc/` one at a time |
-| Prohibited | Never run ECC `install.sh`, `install.ps1`, hooks, or copy skill bodies into `brain/` or missions |
-
-Medic QA blocks merges that embed ECC skill bodies. Lead logs which ECC skill was consulted when it influenced scope or implementation.
 
 ## Best-fit-first model routing
 
@@ -99,27 +146,7 @@ Medic QA blocks merges that embed ECC skill bodies. Lead logs which ECC skill wa
 2. **Rule-of-Two** (`brain/doctrine.md`): the same fix for the same friction class must appear in two AARs before Command promotes a **playbook** under `brain/playbooks/` (squad-native only, never ECC copies).
 3. Mission folders swap per deploy; profiles and `AGENTS.md` stay stable.
 
-## Guided setup (`scripts/setup.sh`)
-
-Interactive first-time bootstrap (idempotent, safe to re-run):
-
-```bash
-git clone https://github.com/ValoLoco/task-force-null.git
-cd task-force-null
-./scripts/setup.sh
-```
-
-| Mode | Usage |
-|------|--------|
-| Dry run | `./scripts/setup.sh --dry-run` (prints commands, no installs or downloads) |
-| CI / automation | `./scripts/setup.sh --non-interactive --skip-llm --harness cursor --mission-slug my-squad` |
-| Skip duplicate sync | Deploy path uses `SKIP_SYNC_ARMORY=1` / `SKIP_DETECT_MODELS=1` when `deploy-squad.sh` runs inside setup |
-
-**Flow:** detect harness (Hermes, PyAgent, Claude, Grok, Cursor) → optional harness install ([`harnesses/`](harnesses/README.md)) → optional local LLM on `127.0.0.1:8080` (reuses `/workspace/local-llm` when present, no re-download of the 6.5 GB Inkling quant) → optional API keys into gitignored `.env` (`chmod 600`, empty input keeps existing keys) → `sync-armory.sh`, `detect-models.sh`, `deploy-squad.sh`, `start.sh`.
-
-Secrets never print to logs. See [`.env.example`](.env.example).
-
-## Deploy a new squad (manual)
+## Deploy a new squad (manual, without `setup.sh`)
 
 ```bash
 git clone https://github.com/ValoLoco/task-force-null.git
