@@ -167,7 +167,7 @@ function Get-TfnLlmProbeDisplayBase {
 }
 
 function Test-LlmHealthy {
-    $urls = @(Get-TfnLlmProbeModelsUrl, Get-TfnLlmProbeHealthUrl)
+    $urls = @((Get-TfnLlmProbeModelsUrl), (Get-TfnLlmProbeHealthUrl))
     foreach ($url in $urls) {
         if (Test-UrlOk $url) { return $true }
     }

@@ -97,23 +97,34 @@ check_license_readme() {
 }
 
 check_setup_artifacts() {
-  local ok=0 ps1="${REPO_ROOT}/scripts/setup.ps1"
-  [[ -f "$ps1" ]] || { echo "missing setup.ps1" >&2; ok=1; }
+  local ok=0 ps1 shell_cmd f
+  local ps_files=(setup.ps1 inkling_detect.ps1)
+  [[ -f "${REPO_ROOT}/scripts/setup.ps1" ]] || { echo "missing setup.ps1" >&2; ok=1; }
+  [[ -f "${REPO_ROOT}/scripts/inkling_detect.ps1" ]] || { echo "missing inkling_detect.ps1" >&2; ok=1; }
   [[ -f "${REPO_ROOT}/scripts/setup.bat" ]] || { echo "missing setup.bat" >&2; ok=1; }
+  shell_cmd=""
   if command -v pwsh >/dev/null 2>&1; then
-    pwsh -NoProfile -Command "
-      \$e = \$null; \$t = \$null
-      [void][System.Management.Automation.Language.Parser]::ParseFile('$ps1', [ref]\$t, [ref]\$e)
-      if (\$e.Count -gt 0) { \$e | ForEach-Object { Write-Error \$_.ToString() }; exit 1 }
-    " || ok=1
+    shell_cmd="pwsh"
   elif command -v powershell >/dev/null 2>&1; then
-    powershell -NoProfile -Command "
-      \$e = \$null; \$t = \$null
-      [void][System.Management.Automation.Language.Parser]::ParseFile('$ps1', [ref]\$t, [ref]\$e)
-      if (\$e.Count -gt 0) { \$e | ForEach-Object { Write-Error \$_.ToString() }; exit 1 }
-    " || ok=1
+    shell_cmd="powershell"
+  fi
+  if [[ -n "$shell_cmd" ]]; then
+    for f in "${ps_files[@]}"; do
+      ps1="${REPO_ROOT}/scripts/${f}"
+      [[ -f "$ps1" ]] || continue
+      if ! "$shell_cmd" -NoProfile -Command "
+        \$e = \$null; \$t = \$null
+        [void][System.Management.Automation.Language.Parser]::ParseFile('$ps1', [ref]\$t, [ref]\$e)
+        if (\$e.Count -gt 0) { \$e | ForEach-Object { Write-Error \$_.ToString() }; exit 1 }
+      "; then
+        echo "PowerShell parse failed: $ps1" >&2
+        ok=1
+      fi
+    done
   else
-    grep -q 'param' "$ps1" && grep -q 'function Write-SetupLog' "$ps1" || ok=1
+    grep -q 'param' "${REPO_ROOT}/scripts/setup.ps1" \
+      && grep -q 'function Write-SetupLog' "${REPO_ROOT}/scripts/setup.ps1" || ok=1
+    grep -q 'function Select-InklingQuant' "${REPO_ROOT}/scripts/inkling_detect.ps1" || ok=1
   fi
   [[ "$ok" -eq 0 ]]
 }
