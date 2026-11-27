@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-python3 -m py_compile "${ROOT}/scripts/toc_lib.py" "${ROOT}/scripts/toc-web.py"
+python3 -m py_compile "${ROOT}/scripts/toc_lib.py" "${ROOT}/scripts/toc_chat.py" "${ROOT}/scripts/toc-web.py"
 
 TMP="$(mktemp -d)"
 trap 'cleanup' EXIT INT TERM
@@ -95,6 +95,72 @@ kill -TERM "$SSE_PID" 2>/dev/null || true
 wait "$SSE_PID" 2>/dev/null || true
 grep -q 'event: log' "$SSE_LOG" || { echo "FAIL: SSE log event missing" >&2; cat "$SSE_LOG" >&2; exit 1; }
 grep -qF "$LOG_MARK" "$SSE_LOG" || { echo "FAIL: SSE log payload missing marker" >&2; cat "$SSE_LOG" >&2; exit 1; }
+
+CHAT_MARK="tfn_chat_probe_$$"
+CHAT_SSE="$TMP/chat-sse.txt"
+: >"$CHAT_SSE"
+curl -sS -N --max-time 25 "$URL/events" >>"$CHAT_SSE" 2>/dev/null &
+CHAT_SSE_PID=$!
+sleep 0.5
+
+CHAT_POST="$(curl -sS -w '\n%{http_code}' -X POST "$URL/api/chat" \
+  -H 'Content-Type: application/json' \
+  -d "{\"mission\":\"setup-mission\",\"sender\":\"user\",\"text\":\"$CHAT_MARK\"}")"
+CHAT_HTTP="$(echo "$CHAT_POST" | tail -1)"
+CHAT_BODY="$(echo "$CHAT_POST" | sed '$d')"
+[[ "$CHAT_HTTP" == "201" ]] || {
+  echo "FAIL: POST /api/chat expected 201 got $CHAT_HTTP" >&2
+  echo "$CHAT_BODY" >&2
+  exit 1
+}
+python3 -c "
+import json, sys
+row = json.loads(sys.argv[1])
+assert row.get('text') == sys.argv[2]
+assert row.get('mission') == 'setup-mission'
+" "$CHAT_BODY" "$CHAT_MARK"
+
+CHAT_LOG="${TMP}/missions/setup-mission/logs/commander-chat.jsonl"
+[[ -f "$CHAT_LOG" ]] || { echo "FAIL: commander-chat.jsonl missing" >&2; exit 1; }
+grep -qF "$CHAT_MARK" "$CHAT_LOG" || {
+  echo "FAIL: chat not persisted to JSONL" >&2
+  cat "$CHAT_LOG" >&2
+  exit 1
+}
+
+CHAT_GET="$(curl -fsS "$URL/api/chat?mission=setup-mission&limit=50")"
+python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+assert d['mission'] == 'setup-mission'
+texts = [m['text'] for m in d['messages']]
+assert sys.argv[2] in texts, 'GET /api/chat missing posted message'
+" "$CHAT_GET" "$CHAT_MARK"
+
+BAD_CODE="$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/chat?mission=../etc&limit=10")"
+[[ "$BAD_CODE" == "400" ]] || {
+  echo "FAIL: invalid mission slug expected 400 got $BAD_CODE" >&2
+  exit 1
+}
+
+for _ in $(seq 1 60); do
+  if grep -q 'event: chat' "$CHAT_SSE" && grep -qF "$CHAT_MARK" "$CHAT_SSE"; then
+    break
+  fi
+  sleep 0.15
+done
+kill -TERM "$CHAT_SSE_PID" 2>/dev/null || true
+wait "$CHAT_SSE_PID" 2>/dev/null || true
+grep -q 'event: chat' "$CHAT_SSE" || {
+  echo "FAIL: SSE chat event missing" >&2
+  cat "$CHAT_SSE" >&2
+  exit 1
+}
+grep -qF "$CHAT_MARK" "$CHAT_SSE" || {
+  echo "FAIL: SSE chat payload missing marker" >&2
+  cat "$CHAT_SSE" >&2
+  exit 1
+}
 
 CODE="$(curl -s -o /dev/null -w '%{http_code}' "$URL/.env")"
 [[ "$CODE" == "404" ]] || { echo "FAIL: expected 404 for /.env got $CODE" >&2; exit 1; }

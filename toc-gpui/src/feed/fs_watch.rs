@@ -1,7 +1,8 @@
+use crate::chat::ChatTailer;
+use crate::log_io::LogTailer;
 use crate::shutdown::ShutdownSignal;
 use crate::state::collect_state;
 use crate::store::{StoreEvent, TocStore};
-use crate::log_io::LogTailer;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::sync::Arc;
@@ -20,6 +21,7 @@ pub fn spawn_fs_watch(repo: &Path, store: Arc<TocStore>, shutdown: ShutdownSigna
             let _ = store_cb.apply(StoreEvent::State(collect_state(&repo)));
 
             let mut tailer = LogTailer::default();
+            let mut chat_tailer = ChatTailer::default();
             let mut last_tail = std::time::Instant::now();
 
             let (tx, rx) = std::sync::mpsc::channel();
@@ -42,6 +44,9 @@ pub fn spawn_fs_watch(repo: &Path, store: Arc<TocStore>, shutdown: ShutdownSigna
                     last_tail = std::time::Instant::now();
                     for ev in tailer.poll(&repo) {
                         let _ = store_cb.apply(StoreEvent::LogLine(ev));
+                    }
+                    for msg in chat_tailer.poll_repo(&repo) {
+                        let _ = store_cb.apply(StoreEvent::ChatMessage(msg));
                     }
                 }
                 shutdown.sleep_or_stop(Duration::from_millis(100));
