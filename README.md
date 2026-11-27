@@ -147,7 +147,7 @@ Medic QA blocks merges that embed ECC skill bodies. Lead logs which ECC skill wa
 
 ## Verification (`scripts/verify.sh`)
 
-One command runs shell syntax checks, router and setup smoke tests, profile line limits, branding checks, and an owned-file em-dash scan (excluding `armory/ecc/`). Default `VERIFY_SKIP_ONLINE_SYNC=1` avoids upstream ECC sync during verify so CI and offline runs stay deterministic; unset it locally to exercise live `sync-armory.sh`.
+One command runs shell syntax checks, router and setup smoke tests, profile line limits, branding checks, and an owned-file em-dash scan (excluding `armory/ecc/`). Default `VERIFY_SKIP_ONLINE_SYNC=1` avoids upstream ECC sync during verify so CI and offline runs stay deterministic; unset it locally to exercise live `sync-armory.sh`. `./scripts/verify.sh` does not require Rust/Cargo. Native GPUI coverage is in `scripts/test_toc_gpui.sh` (run locally when `cargo` is installed) and `.github/workflows/toc-gpui.yml`; set `VERIFY_RUN_GPUI=1` to opt into GPUI during verify when `cargo` is present.
 
 ```bash
 ./scripts/verify.sh
