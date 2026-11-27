@@ -19,6 +19,6 @@ A task may pass role-to-role at most twice without Lead reset or human review. H
 
 ## Comms Path
 
-Builder → Medic-qa → Comms → Human approval → external channel.
+Builder → Medic-qa → Comms → **Command** → Human approval → external channel.
 
-Internal-only handoffs may skip Comms unless the deliverable is human-facing documentation.
+Only **Command** talks to the human. Internal-only handoffs may skip Comms unless the deliverable is human-facing documentation (still relayed via Command if shown to the user).

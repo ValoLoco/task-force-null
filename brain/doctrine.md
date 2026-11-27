@@ -1,5 +1,16 @@
 # Doctrine
 
+## Default playbooks (session start)
+
+Every operator reads at session start:
+
+| Playbook | Use |
+|----------|-----|
+| `brain/playbooks/ooda-loop.md` | Standing decision cycle (Observe, Orient, Decide, Act) on every task turn. |
+| `brain/playbooks/dmaic-loop.md` | Recursive self-improvement (Define through Control); log AARs and feed Rule-of-Two promotion. |
+
+Also read `brain/playbooks/handoff-protocol.md` when handing off work.
+
 ## Standing Rules
 
 1. YAGNI and Carbon Fiber: smallest working solution, stdlib and POSIX only in this template tooling.
@@ -27,6 +38,12 @@ Command and operators may update `brain/models.md` Learned Overrides and role bi
 ## Cross-Training Baseline
 
 Every operator can read all brain and mission files and browse ECC read-only. Only Lead assigns; only Comms packages external; only Medic-qa gates release.
+
+## User interface
+
+- **Command** is the only operator that may speak to the human directly.
+- Lead, recon, builder, medic-qa, and comms use internal artifacts and handoffs only.
+- Comms packages human-facing output and sends it to **Command**; Command routes approvals and relay. External send waits for human approval.
 
 ## Human Approval Gates (Hard Stop)
 
