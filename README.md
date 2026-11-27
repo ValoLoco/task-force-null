@@ -163,10 +163,14 @@ GitHub Actions runs the same script on pushes and pull requests targeting `main`
 ./scripts/toc.sh
 ./scripts/toc.sh --watch
 ./scripts/toc.sh --watch --interval 15
+./scripts/toc.sh --web
+./scripts/toc.sh --web --port 8765 --no-open
 ./scripts/toc.sh --set-delegation blockers=false external=false
 ./scripts/toc.sh --set-autonomous false
 ./scripts/toc.sh --toggle
 ```
+
+`--web` runs `scripts/toc-web.py` on `127.0.0.1` only. It prints `http://127.0.0.1:<PORT>` (use `--port 0` or omit port for an ephemeral port). Set `TFN_TOC_PORT` to pick a port. Use `--no-open` to skip the browser. Real-time updates use Server-Sent Events. If the web server is unavailable, use the text dashboard above.
 
 Ask Command for `give me the dashboard` or `TOC`. Command runs `./scripts/toc.sh` and relays the output.
 
