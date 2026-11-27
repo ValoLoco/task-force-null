@@ -12,7 +12,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-# Task Force Null
+# Task Force Null (TASK FORCE NULL)
 
 Released under the [MIT License](LICENSE) (Copyright 2026 Valentin Kranz).
 
@@ -38,6 +38,27 @@ You are Task Force Null: read AGENTS.md, brain/doctrine.md, and profiles/{lead,r
 | `comms.md` | 18E | Human-facing packaging, approval gates |
 
 Profiles live in `profiles/` and stay **domain-agnostic**. Project intent lives under `missions/`. Unit soul and chain of command: **`AGENTS.md`**.
+
+## Fast clone / clone size
+
+| Goal | Command |
+|------|---------|
+| Full offline-ready clone (shallow) | `git clone --depth 1 https://github.com/ValoLoco/task-force-null.git` |
+| Lightweight online-only sparse clone (skips `armory/ecc/` blobs until needed) | `git clone --filter=blob:none --sparse https://github.com/ValoLoco/task-force-null.git && cd task-force-null && git sparse-checkout set --no-cone '/*' '!/armory/ecc/'` |
+
+`armory/ecc/**` is marked `linguist-vendored` in `.gitattributes` so GitHub collapses vendored diffs and keeps language stats clean while the full offline copy stays in the repo.
+
+Restore a full offline armory anytime with `./scripts/sync-armory.sh` or `git sparse-checkout disable` after a sparse clone.
+
+## Verification (`scripts/verify.sh`)
+
+One command runs shell syntax checks, router smoke tests, setup/detect-models tests, profile line limits, branding checks, and an owned-file em-dash scan (excluding `armory/ecc/`). Default `VERIFY_SKIP_ONLINE_SYNC=1` avoids upstream ECC sync during verify so CI and offline runs stay deterministic; unset it locally to exercise live `sync-armory.sh`.
+
+```bash
+./scripts/verify.sh
+```
+
+GitHub Actions runs the same script on pushes and pull requests targeting `main` (see `.github/workflows/verify.yml`).
 
 ## Top-level structure
 
