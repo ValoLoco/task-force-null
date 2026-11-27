@@ -48,9 +48,9 @@ Dry run (no installs or `.env` writes): add `--dry-run` on bash or `-DryRun` on 
 
 ## Grok Bot template
 
-Grok Bot users can add **Task Force Null Command** to their profiles via the published Grok Bot template.
+Grok Bot users can add **Task Force Null Command** to their profiles via the [published Grok Bot template](https://x.ai/bot/zBFQAAO1GAvF30CG0mr6I).
 
-**One line:** Import the published **Task Force Null Command** template in Grok Bot and open its chat to start the built-in onboarding flow.
+**One line:** Import the [published Task Force Null Command template](https://x.ai/bot/zBFQAAO1GAvF30CG0mr6I) in Grok Bot and open its chat to start the built-in onboarding flow.
 
 | On import | Detail |
 |-----------|--------|
