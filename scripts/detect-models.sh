@@ -23,13 +23,33 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+env_is_active() {
+  local f="$1" line
+  [[ -f "$f" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^ACTIVE=1[[:space:]]*$ ]] && return 0
+  done <"$f"
+  return 1
+}
+
 if [[ -z "$SLUG" ]]; then
+  active_count=0
   while IFS= read -r envfile; do
-    if grep -q '^ACTIVE=1' "$envfile" 2>/dev/null; then
-      SLUG="$(basename "$(dirname "$envfile")")"
-      break
+    if env_is_active "$envfile"; then
+      active_count=$((active_count + 1))
+      if [[ -z "$SLUG" ]]; then
+        SLUG="$(basename "$(dirname "$envfile")")"
+      fi
     fi
   done < <(find "${REPO_ROOT}/missions" -mindepth 2 -maxdepth 2 -name 'squad.env' 2>/dev/null | sort)
+  if [[ "$active_count" -gt 1 ]]; then
+    echo "detect-models: warning: ${active_count} missions have ACTIVE=1; using ${SLUG}" >&2
+  fi
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "detect-models: python3 not found; inventory probes skipped (install python3, or pkg install python on Termux)" >&2
 fi
 
 if [[ -z "$ENV_TARGET" && -n "$SLUG" ]]; then
@@ -41,9 +61,11 @@ mkdir -p "${REPO_ROOT}/brain"
 detect_harness() {
   if [[ -n "${CURSOR_TRACE_ID:-}" || -n "${CURSOR_AGENT:-}" ]]; then
     echo "cursor"
-  elif [[ -n "${CLAUDE_CODE:-}" || -n "${CLAUDE_CODE_SSE_PORT:-}" ]]; then
+  elif command -v pi >/dev/null 2>&1; then
+    echo "pi"
+  elif [[ -n "${CLAUDE_CODE:-}" || -n "${CLAUDE_CODE_SSE_PORT:-}" ]] || command -v claude >/dev/null 2>&1; then
     echo "claude-code"
-  elif [[ -n "${HERMES_BIN:-}" || -n "${HERMES_HOME:-}" ]]; then
+  elif [[ -n "${HERMES_BIN:-}" || -n "${HERMES_HOME:-}" ]] || command -v hermes >/dev/null 2>&1; then
     echo "hermes"
   elif [[ -n "${GROK_BOT:-}" || -n "${XAI_API_KEY:-}" ]]; then
     echo "grok-bot"

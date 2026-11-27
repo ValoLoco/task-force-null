@@ -19,6 +19,22 @@ usage() {
 [[ $# -eq 1 ]] || usage
 SLUG="$1"
 
+if [[ -n "${TERMUX_VERSION:-}" || "${PREFIX:-}" == *com.termux* ]]; then
+  echo "error: Termux has no systemd. Run ./scripts/start.sh in a shell. See README Quick install." >&2
+  exit 1
+fi
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  Linux) ;;
+  *)
+    echo "error: systemd user units are for Linux with systemd. macOS and Windows run ./scripts/start.sh directly." >&2
+    exit 1
+    ;;
+esac
+if ! command -v systemctl >/dev/null 2>&1; then
+  echo "error: systemctl not found. This host has no systemd user manager." >&2
+  exit 1
+fi
+
 [[ -f "$UNIT_SRC" ]] || { echo "error: missing unit template" >&2; exit 1; }
 mkdir -p "$USER_UNIT_DIR"
 cp "$UNIT_SRC" "${USER_UNIT_DIR}/sf-agent-unit@.service"

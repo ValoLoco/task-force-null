@@ -31,22 +31,39 @@ validate_layout() {
   require_file "${REPO_ROOT}/brain/aar-log.md"
 }
 
+env_is_active() {
+  local f="$1" line
+  [[ -f "$f" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^ACTIVE=1[[:space:]]*$ ]] && return 0
+  done <"$f"
+  return 1
+}
+
 resolve_mission() {
   local slug="${MISSION_SLUG:-}"
   if [[ -n "$slug" ]]; then
-    echo "$slug"
+    printf '%s\n' "$slug"
     return
   fi
-  local envfile active=""
+  local envfile chosen="" count=0 name
   while IFS= read -r envfile; do
-    if grep -q '^ACTIVE=1' "$envfile" 2>/dev/null; then
-      active="$(dirname "$envfile")"
-      active="${active##*/}"
-      echo "$active"
-      return
+    if env_is_active "$envfile"; then
+      count=$((count + 1))
+      name="$(basename "$(dirname "$envfile")")"
+      if [[ -z "$chosen" ]]; then
+        chosen="$name"
+      fi
     fi
   done < <(find "${REPO_ROOT}/missions" -mindepth 2 -maxdepth 2 -name 'squad.env' 2>/dev/null | sort)
-  fail "no active mission; set MISSION_SLUG or set ACTIVE=1 in one missions/*/squad.env"
+  if [[ "$count" -gt 1 ]]; then
+    log "warning: ${count} missions have ACTIVE=1; using ${chosen}. Set MISSION_SLUG to choose."
+  fi
+  if [[ -z "$chosen" ]]; then
+    fail "no active mission; set MISSION_SLUG or set ACTIVE=1 in one missions/*/squad.env"
+  fi
+  printf '%s\n' "$chosen"
 }
 
 validate_mission() {
@@ -57,20 +74,18 @@ validate_mission() {
   require_file "${mdir}/intel.md"
   require_file "${mdir}/board.md"
   require_file "${mdir}/squad.env"
-  if ! grep -q '^ACTIVE=1' "${mdir}/squad.env"; then
+  if ! env_is_active "${mdir}/squad.env"; then
     log "warning: squad.env ACTIVE is not 1 for ${slug}"
   fi
-  export MISSION_SLUG="$slug"
   local root_before="$REPO_ROOT"
   # shellcheck source=/dev/null
   set -a
   # shellcheck disable=SC1090
-  source "${mdir}/squad.env" 2>/dev/null || true
+  source <(tr -d '\r' < "${mdir}/squad.env") 2>/dev/null || true
   set +a
-  if [[ -z "${REPO_ROOT:-}" ]]; then
-    REPO_ROOT="$root_before"
-    export REPO_ROOT
-  fi
+  REPO_ROOT="$root_before"
+  export REPO_ROOT
+  export MISSION_SLUG="$slug"
 }
 
 main() {

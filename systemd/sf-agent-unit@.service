@@ -8,9 +8,8 @@ Type=oneshot
 RemainAfterExit=yes
 Environment=REPO_ROOT=%h/task-force-null
 Environment=MISSION_SLUG=%i
-ExecStart=/bin/bash -c 'cd "$REPO_ROOT" && exec ./scripts/start.sh'
-Restart=on-failure
-RestartSec=30
+# Oneshot readiness check. Linux systemd only (no restart loop).
+ExecStart=/usr/bin/env bash -c 'cd "$REPO_ROOT" && exec ./scripts/start.sh'
 
 [Install]
 WantedBy=default.target

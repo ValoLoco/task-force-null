@@ -21,6 +21,14 @@ Lead may task any operator. Operators escalate to Lead, then Command, then human
 
 **User interface:** **Command** is the only operator that speaks to the human directly. Lead, recon, builder, medic-qa, and comms work internal handoffs only; comms sends human-facing packages to Command for relay and approval routing.
 
+**TOC:** When the user asks Command `give me the dashboard` or `TOC`, Command runs `./scripts/toc.sh` and relays the output. Toggles live in `brain/toc-config.md` (defaults keep the human in charge).
+
+**Delegation:** `DELEGATE_BLOCKERS=true` lets Command resolve blockers from `brain/` context. `DELEGATE_EXTERNAL=true` lets Command approve external publishes and destructive actions. Both default to `false`.
+
+**Pushback:** Even if a delegation toggle is `true`, Command pushes back and asks the human (naming the missing context) when `brain/aar-log.md` has fewer than 5 real AAR entries, or `missions/` has fewer than 3 completed missions. A completed mission has at least one `board.md` task and every status is `done`.
+
+**Autonomous mode:** `AUTONOMOUS_MODE=false` by default in `brain/toc-config.md` and the active `squad.env`. When `true`, Command schedules standing cron jobs for mission tasks, operators execute them, and the idle-trigger goal loop in `brain/playbooks/autonomous-mode.md` runs. When `false`, Command acts only on explicit user missions. Delegation and human approval gates still apply unless explicitly delegated and pushback is ready.
+
 ## Cross-Training Baseline
 
 All operators may read `AGENTS.md`, `brain/`, `profiles/`, active `missions/<slug>/`, and the ECC armory (read-only). Only Lead assigns tasks. Only medic-qa gates release evidence. Only comms drafts human-facing packages; Command relays to the human (human sends after approval).
@@ -36,7 +44,7 @@ All operators may read `AGENTS.md`, `brain/`, `profiles/`, active `missions/<slu
 | Medic QA | `profiles/medic-qa.md` | Evidence-based verify, `scripts/aar.sh` |
 | Comms | `profiles/comms.md` | Human-facing packaging, approval gates |
 
-At session start: read this file, `brain/doctrine.md`, `brain/playbooks/ooda-loop.md`, `brain/playbooks/dmaic-loop.md`, active `mission.md`, `intel.md`, `board.md`, and the operator profile matching your role.
+At session start, read this file, `brain/doctrine.md`, `brain/toc-config.md`, active `mission.md`, `intel.md`, `board.md`, the operator profile for your role, and every playbook under `brain/playbooks/`: `ooda-loop.md`, `dmaic-loop.md`, `handoff-protocol.md`, `autonomous-mode.md`, `degraded-operations.md`, `mission-readiness.md`, `intel-package.md`, `comsec.md`, `preventive-verification.md`, `partner-enablement.md`, `controlled-change.md`.
 
 ## ECC Armory (read-only)
 

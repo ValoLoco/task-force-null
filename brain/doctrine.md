@@ -8,8 +8,17 @@ Every operator reads at session start:
 |----------|-----|
 | `brain/playbooks/ooda-loop.md` | Standing decision cycle (Observe, Orient, Decide, Act) on every task turn. |
 | `brain/playbooks/dmaic-loop.md` | Recursive self-improvement (Define through Control); log AARs and feed Rule-of-Two promotion. |
+| `brain/playbooks/handoff-protocol.md` | Handoff packet and max-2-hops rule. |
+| `brain/playbooks/autonomous-mode.md` | Idle goal loop when `AUTONOMOUS_MODE=true`. |
+| `brain/playbooks/degraded-operations.md` | Armory, inference, or network outage fallbacks. |
+| `brain/playbooks/mission-readiness.md` | Pre-mission gate from `setup-mission` before real work. |
+| `brain/playbooks/intel-package.md` | Required fields on every Recon `intel.md` entry. |
+| `brain/playbooks/comsec.md` | Command-only contact, secrets hygiene, channel discipline. |
+| `brain/playbooks/preventive-verification.md` | `verify.sh` before merge. |
+| `brain/playbooks/partner-enablement.md` | Host handoff so the capability remains after stand-down. |
+| `brain/playbooks/controlled-change.md` | Blast radius and rollback before destructive edits. |
 
-Also read `brain/playbooks/handoff-protocol.md` when handing off work.
+Read `brain/toc-config.md` with these playbooks at session start.
 
 ## Standing Rules
 
@@ -45,10 +54,29 @@ Every operator can read all brain and mission files and browse ECC read-only. On
 - Lead, recon, builder, medic-qa, and comms use internal artifacts and handoffs only.
 - Comms packages human-facing output and sends it to **Command**; Command routes approvals and relay. External send waits for human approval.
 
+## TOC, delegation, and autonomous mode
+
+`brain/toc-config.md` holds the machine-readable toggles. Dashboard command: `./scripts/toc.sh`.
+
+When the user asks Command for `give me the dashboard` or `TOC`, Command runs `./scripts/toc.sh` and relays the output.
+
+- `DELEGATE_BLOCKERS=true`: Command resolves blockers from `brain/` context.
+- `DELEGATE_EXTERNAL=true`: Command approves external publishes and destructive actions.
+- Both default to `false`.
+
+Pushback is mandatory even when a toggle is `true` if `brain/aar-log.md` has fewer than 5 real AAR entries, or `missions/` has fewer than 3 completed missions (a `board.md` with at least one task, every status `done`). Command names the missing context and waits for the human.
+
+`AUTONOMOUS_MODE=false` by default, in `brain/toc-config.md` and the active `squad.env`. When `true`, Command schedules standing cron jobs for mission tasks, operators execute them, and the idle-trigger loop in `brain/playbooks/autonomous-mode.md` runs. When `false`, Command acts only on explicit user missions.
+
 ## Human Approval Gates (Hard Stop)
+
+External publish and destructive actions stop for the human unless `DELEGATE_EXTERNAL=true` and pushback is ready (at least 5 real AARs and 3 completed missions):
 
 - External publish (web, email, social, customer channel).
 - Destructive data or infra actions.
+
+These always stop for the human:
+
 - Credential creation, rotation, or storage outside approved secret stores.
 - Doctrine or mission limit exceptions.
 
