@@ -45,3 +45,5 @@ When the user asks Command for `give me the dashboard` or `TOC`, Command runs `.
 `./scripts/toc.sh --set-autonomous true|false` updates `AUTONOMOUS_MODE` here and on the active `squad.env`.
 `./scripts/toc.sh --toggle` prompts for the three toggles.
 `./scripts/toc.sh --watch` refreshes every 30 seconds. `--interval <seconds>` changes the period.
+
+`./scripts/toc.sh --web` starts a localhost-only dashboard at `http://127.0.0.1:<PORT>` (optional `--port`, `TFN_TOC_PORT`, `--no-open`). The terminal dashboard remains the default fallback.
