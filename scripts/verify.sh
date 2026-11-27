@@ -50,7 +50,7 @@ check_router() {
 
 check_toc_python() {
   local f ok=0
-  for f in toc_lib.py toc_config.py toc_mission.py toc_state.py toc_render.py toc-web.py; do
+  for f in toc_lib.py toc_config.py toc_mission.py toc_state.py toc_render.py toc_actions.py toc-web.py; do
     python3 -m py_compile "${REPO_ROOT}/scripts/${f}" || ok=1
   done
   [[ "$ok" -eq 0 ]]
