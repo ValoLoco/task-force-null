@@ -46,6 +46,21 @@ Dry run (no installs or `.env` writes): add `--dry-run` on bash or `-DryRun` on 
 - Harness: `pkg install nodejs git`, then `npm install -g --ignore-scripts @earendil-works/pi-coding-agent` and `pi install npm:pi-agents`. `pi`, `pi-agents`, and Pi Durable run on Termux Node 24+ with Node's built-in `node:sqlite`.
 - Persistence: no `systemd`. Use `tmux` or `termux-services` (`runit`) plus `termux-wake-lock`. Android 12+ Phantom Process Killer can still stop background work.
 
+## Grok Bot template
+
+Grok Bot users can add **Task Force Null Command** to their profiles via the published Grok Bot template.
+
+**One line:** Import the published **Task Force Null Command** template in Grok Bot and open its chat to start the built-in onboarding flow.
+
+| On import | Detail |
+|-----------|--------|
+| Bootstrap skill | `task-force-null-getting-started` runs automatically |
+| Repo + harness | Clones [`ValoLoco/task-force-null`](https://github.com/ValoLoco/task-force-null); installs Pi Coding Agent (`pi`, `pi-agents`) |
+| TOC group | Spawns **Lead**, **Recon**, **Builder**, **Medic QA**, and **Comms** alongside **Command** in the 6-bot **Task Force Null TOC** group channel |
+| Standing routines | Wires **TOC Status Check** and paused-by-default **Autonomous Mode Loop** in place of `systemd` |
+| Inference | Grok Bot native inference by default; onboarding may prompt for an extra API key (NVIDIA NIM, OpenAI, xAI, Anthropic, or other) and/or local Inkling via `llama.cpp` |
+| Sidebar | Creating a dedicated **Task Force Null** sidebar section takes one manual step in the Grok Bot sidebar UI |
+
 ## One-line deploy prompt (existing harness, no setup)
 
 Copy into any AI harness (Hermes, Pi, Grok Bot, Claude, Cursor, etc.) when you **do not** run `setup.sh`:
