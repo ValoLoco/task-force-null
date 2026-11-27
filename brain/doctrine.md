@@ -8,6 +8,14 @@
 4. Max handoff hops: two (see `playbooks/handoff-protocol.md`).
 5. Never use em dashes in repo prose, docs, or comments.
 
+## Model Routing (best-fit-first)
+
+1. Pick the model best suited to the task (complexity, required capabilities, and context needs).
+2. If two models fit equally well, choose the cheaper one.
+3. Step up or down based on observed results, not on cost alone.
+
+Command and operators may update `brain/models.md` Learned Overrides and role bindings over time. Cost is a tiebreaker only, never the primary selector.
+
 ## ECC Read-Only Armory
 
 - Specialist depth may come from `/workspace/ecc` on the host only (reference path, not vendored).

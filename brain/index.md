@@ -4,7 +4,8 @@ Shared **Task Force Null** memory for all squads. Read at deploy; write via AARs
 
 | Path | Purpose |
 |------|---------|
-| `doctrine.md` | Standing rules, ECC armory rule, approval gates, Rule-of-Two |
+| `doctrine.md` | Standing rules, model routing, ECC armory, approval gates, Rule-of-Two |
+| `models.md` | Detected model inventory, Learned Overrides (bootstrap via `detect-models.sh`) |
 | `aar-log.md` | Outcome / Friction / Fix history |
 | `playbooks/_template.md` | Skeleton for new playbooks |
 | `playbooks/handoff-protocol.md` | Handoff packet and max-2-hops rule |

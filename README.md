@@ -47,6 +47,12 @@ Task Force Null does **not** ship specialist skills. When depth is needed, opera
 
 Medic QA blocks merges that embed ECC skill bodies. Lead logs which ECC skill was consulted in the task handoff packet when it influenced scope or implementation.
 
+## Best-fit-first model routing
+
+- Bootstrap inventory: `./scripts/detect-models.sh --slug <slug>` probes local OpenAI-compatible endpoints (`:8080`, vLLM `:8000`, Ollama `:11434`) and notes configured API providers via env presence (secrets never printed).
+- Route: `python3 scripts/router.py "implement payment webhook"` returns operator role, `selected_model`, `fit_score`, `tiebreak_reason`, and step up/down candidates.
+- Policy lives in `AGENTS.md` and `brain/doctrine.md`: fit first, cost tiebreak, step on observed results.
+
 ## How `brain/` compounds
 
 1. Squads append **AARs** (`Outcome` / `Friction` / `Fix`) via `scripts/aar.sh`.
@@ -60,6 +66,7 @@ git clone https://github.com/ValoLoco/task-force-null.git
 cd task-force-null
 
 ./scripts/deploy-squad.sh my-project "Ship the API integration MVP"
+./scripts/detect-models.sh --slug my-project   # also runs at deploy unless SKIP_DETECT_MODELS=1
 ./scripts/start.sh
 python3 scripts/router.py --log "research dependency versions"
 MISSION_SLUG=my-project ./scripts/aar.sh \

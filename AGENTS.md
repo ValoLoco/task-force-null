@@ -45,6 +45,23 @@ At session start: read this file, `brain/doctrine.md`, active `mission.md`, `int
 - **Forbidden:** ECC installers, hooks, mutating scripts, or vendoring ECC content into mission folders.
 - **Lead** approves ECC lookups that affect scope or compliance; **medic-qa** rejects commits that embed ECC skill text.
 
+## Model Routing (best-fit-first)
+
+1. Pick the model best suited to the task (complexity, required capabilities, and context needs).
+2. If two models fit equally well, choose the cheaper one.
+3. Step up or down based on observed results, not on cost alone.
+
+Command and each operator may update `brain/models.md` and `missions/<slug>/squad.env` `MODEL_BIND_*` preferences as they learn which models work best per task type. Run `scripts/detect-models.sh` to refresh inventory.
+
+<!-- BEGIN:MODEL_INVENTORY -->
+### Live model inventory (auto)
+
+- harness: (not detected yet)
+- detected_at:
+- inventory_count: 0
+- models: (none detected yet; run scripts/detect-models.sh)
+<!-- END:MODEL_INVENTORY -->
+
 ## Compounding Memory
 
-Squad-local learning lives in `brain/` (doctrine, AAR log, promoted playbooks). ECC remains external reference only.
+Squad-local learning lives in `brain/` (doctrine, AAR log, promoted playbooks, `models.md`). ECC remains external reference only.

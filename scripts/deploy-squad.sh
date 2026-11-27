@@ -59,6 +59,11 @@ while IFS= read -r envfile; do
   fi
 done < <(find "${MISSIONS}" -mindepth 2 -maxdepth 2 -name 'squad.env' 2>/dev/null)
 
+if [[ "${SKIP_DETECT_MODELS:-0}" != "1" ]]; then
+  MISSION_SLUG="${SLUG}" "${REPO_ROOT}/scripts/detect-models.sh" --slug "${SLUG}" || \
+    echo "note: detect-models.sh skipped or failed (offline OK); run manually later"
+fi
+
 echo "Deployed mission: ${SLUG}"
 echo "Mission dir: ${DEST}"
 echo "Run: MISSION_SLUG=${SLUG} ${REPO_ROOT}/scripts/start.sh"
