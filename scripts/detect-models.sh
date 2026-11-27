@@ -13,7 +13,46 @@ HARNESS_OVERRIDE=""
 usage() {
   echo "Usage: $0 [--slug SLUG] [--env-file PATH] [--repo-root PATH] [--harness NAME]"
   echo "Env: TFN_HARNESS (overrides automatic harness detection)"
+  echo "     TFN_LLM_PROBE_HOST, TFN_LLM_PROBE_PORT (default openai-compat probe)"
+  echo "     TFN_DETECT_PROBE_OPENAI_URL, TFN_DETECT_PROBE_VLLM_URL, TFN_DETECT_PROBE_OLLAMA_URL"
   exit 1
+}
+
+normalize_harness_token() {
+  case "${1:-}" in
+    grok) printf 'grok-bot' ;;
+    "") printf '' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+tfn_detect_probe_host() {
+  printf '%s' "${TFN_LLM_PROBE_HOST:-127.0.0.1}"
+}
+
+tfn_detect_probe_openai_url() {
+  if [[ -n "${TFN_DETECT_PROBE_OPENAI_URL:-}" ]]; then
+    printf '%s' "$TFN_DETECT_PROBE_OPENAI_URL"
+    return
+  fi
+  local port="${TFN_LLM_PROBE_PORT:-8080}"
+  printf 'http://%s:%s/v1/models' "$(tfn_detect_probe_host)" "$port"
+}
+
+tfn_detect_probe_vllm_url() {
+  if [[ -n "${TFN_DETECT_PROBE_VLLM_URL:-}" ]]; then
+    printf '%s' "$TFN_DETECT_PROBE_VLLM_URL"
+    return
+  fi
+  printf 'http://%s:8000/v1/models' "$(tfn_detect_probe_host)"
+}
+
+tfn_detect_probe_ollama_url() {
+  if [[ -n "${TFN_DETECT_PROBE_OLLAMA_URL:-}" ]]; then
+    printf '%s' "$TFN_DETECT_PROBE_OLLAMA_URL"
+    return
+  fi
+  printf 'http://%s:11434/api/tags' "$(tfn_detect_probe_host)"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -64,11 +103,11 @@ mkdir -p "${REPO_ROOT}/brain"
 
 detect_harness() {
   if [[ -n "${TFN_HARNESS:-}" ]]; then
-    echo "$TFN_HARNESS"
+    normalize_harness_token "$TFN_HARNESS"
     return 0
   fi
   if [[ -n "$HARNESS_OVERRIDE" ]]; then
-    echo "$HARNESS_OVERRIDE"
+    normalize_harness_token "$HARNESS_OVERRIDE"
     return 0
   fi
   if [[ -n "${GROK_BOT:-}" || -n "${GROK_BOT_CLAIM_PRINCIPAL:-}" || -n "${SAND_BOX_BOOT_ID:-}" ]] \
@@ -112,6 +151,9 @@ if [[ -f "$MODELS_FILE" ]]; then
 fi
 
 if command -v python3 >/dev/null 2>&1; then
+  export TFN_DETECT_PROBE_OPENAI_URL="$(tfn_detect_probe_openai_url)"
+  export TFN_DETECT_PROBE_VLLM_URL="$(tfn_detect_probe_vllm_url)"
+  export TFN_DETECT_PROBE_OLLAMA_URL="$(tfn_detect_probe_ollama_url)"
   python3 - "$TMP_INV" "$HARNESS" "$TS" <<'PY'
 import json, os, sys
 from urllib.request import Request, urlopen
@@ -141,9 +183,9 @@ def add_row(model_id, provider, caps, ctx, cost, lat, rel):
     })
 
 for url, provider, parser in [
-    ("http://127.0.0.1:8080/v1/models", "local_openai_compat", "openai"),
-    ("http://127.0.0.1:8000/v1/models", "local_vllm", "openai"),
-    ("http://127.0.0.1:11434/api/tags", "ollama", "ollama"),
+    (os.environ.get("TFN_DETECT_PROBE_OPENAI_URL", "http://127.0.0.1:8080/v1/models"), "local_openai_compat", "openai"),
+    (os.environ.get("TFN_DETECT_PROBE_VLLM_URL", "http://127.0.0.1:8000/v1/models"), "local_vllm", "openai"),
+    (os.environ.get("TFN_DETECT_PROBE_OLLAMA_URL", "http://127.0.0.1:11434/api/tags"), "ollama", "ollama"),
 ]:
     body = fetch(url)
     if not body:

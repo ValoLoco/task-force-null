@@ -17,6 +17,14 @@ $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $DefaultSlug = "setup-mission"
 if (-not $MissionSlug) { $MissionSlug = $env:SETUP_MISSION_SLUG }
 if (-not $Harness -and $env:SETUP_HARNESS) { $Harness = $env:SETUP_HARNESS }
+if (-not $Harness -and $env:TFN_HARNESS) { $Harness = $env:TFN_HARNESS }
+
+function Normalize-HarnessToken($token) {
+    if ($token -eq "grok") { return "grok-bot" }
+    return $token
+}
+
+if ($Harness) { $Harness = Normalize-HarnessToken $Harness }
 
 $LocalLlmDir = if ($env:LOCAL_LLM_DIR) { $env:LOCAL_LLM_DIR } else {
     if (Test-Path "/workspace/local-llm") { "/workspace/local-llm" }
@@ -58,7 +66,7 @@ function Get-DetectedHarnesses {
     if ($env:HERMES_HOME) { if ($found -notcontains "hermes") { $found += "hermes" } }
     if (Get-Command pi -ErrorAction SilentlyContinue) { $found += "pi" }
     if (Get-Command claude -ErrorAction SilentlyContinue) { $found += "claude" }
-    if ($env:XAI_API_KEY -or $env:GROK_BOT) { $found += "grok" }
+    if ($env:XAI_API_KEY -or $env:GROK_BOT) { $found += "grok-bot" }
     if ($env:CURSOR_AGENT -or $env:CURSOR_TRACE_ID) { $found += "cursor" }
   return $found
 }
@@ -66,6 +74,7 @@ function Get-DetectedHarnesses {
 function Select-Harness {
     param([string]$Chosen, [string]$Install)
     if ($Chosen) {
+        $Chosen = Normalize-HarnessToken $Chosen
         Write-SetupLog "using harness: $Chosen"
         return $Chosen
     }
@@ -84,18 +93,18 @@ function Select-Harness {
         }
     }
     if ($detected.Count -eq 1) {
-        $h = $detected[0]
+        $h = Normalize-HarnessToken $detected[0]
         if (-not (Test-YesNo "Use harness '$h'?" $true)) { return "generic" }
         return $h
     }
-    if ($NonInteractive) { return $detected[0] }
+    if ($NonInteractive) { return (Normalize-HarnessToken $detected[0]) }
     $i = 1
     foreach ($h in $detected) { Write-Host "  $i) $h"; $i++ }
     $sel = Read-Host "Select harness [1]"
     if (-not $sel) { $sel = "1" }
     $idx = [int]$sel - 1
     if ($idx -lt 0 -or $idx -ge $detected.Count) { $idx = 0 }
-    return $detected[$idx]
+    return (Normalize-HarnessToken $detected[$idx])
 }
 
 function Install-HarnessIfNeeded($target) {
@@ -295,7 +304,7 @@ function Set-EnvValue($key, $plain) {
 
 function Prompt-ApiKeys {
     if ($SkipKeys) { Write-SetupLog "skip API keys"; return }
-    foreach ($key in @("NVIDIA_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY")) {
+    foreach ($key in @("NVIDIA_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "XAI_API_KEY")) {
         $cur = Get-EnvValue $key
         if ($NonInteractive) {
             if ($cur) { Write-SetupLog "${key} already set in .env" }
@@ -340,7 +349,7 @@ function Deploy-HarnessNotes($chosen) {
         "hermes" { Write-SetupLog "Hermes: workspace $RepoRoot; see harnesses/hermes-agent.md" }
         "pi" { Write-SetupLog "Pi: workspace $RepoRoot; see harnesses/pi-agent.md" }
         "claude" { Write-SetupLog "Claude Code: open $RepoRoot" }
-        "grok" { Write-SetupLog "Grok Bot: mount repo and load AGENTS.md" }
+        { $_ -in "grok-bot", "grok" } { Write-SetupLog "Grok Bot: mount repo and load AGENTS.md" }
         "cursor" { Write-SetupLog "Cursor: agent workspace $RepoRoot" }
         default { Write-SetupLog "Generic: load AGENTS.md from $RepoRoot" }
     }
@@ -351,7 +360,13 @@ function Bootstrap-Deploy($slug, $chosen) {
     if (-not $slug) { $slug = $DefaultSlug }
     Invoke-BashScript "scripts/sync-armory.sh" @("--allow-offline")
     $env:MISSION_SLUG = $slug
-    Invoke-BashScript "scripts/detect-models.sh" @("--slug", $slug)
+    $detectArgs = @("--slug", $slug)
+    if ($chosen) {
+        $env:TFN_HARNESS = $chosen
+        $detectArgs += "--harness"
+        $detectArgs += $chosen
+    }
+    Invoke-BashScript "scripts/detect-models.sh" $detectArgs
     $missionDir = Join-Path $RepoRoot "missions\$slug"
     if (Test-Path $missionDir) {
         Write-SetupLog "mission $slug already exists; skipping deploy-squad.sh"

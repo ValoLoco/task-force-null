@@ -21,7 +21,7 @@ Lead may task any operator. Operators escalate to Lead, then Command, then human
 
 **User interface:** **Command** is the only operator that speaks to the human directly. Lead, recon, builder, medic-qa, and comms work internal handoffs only; comms sends human-facing packages to Command for relay and approval routing.
 
-**TOC:** When the user asks Command `give me the dashboard` or `TOC`, Command runs `./scripts/toc.sh` and relays the output. Optional localhost web dashboard: `./scripts/toc.sh --web` (`--port`, `--no-open`, env `TFN_TOC_PORT`) at `http://127.0.0.1:<PORT>`. Optional native GPUI desktop: `./scripts/toc.sh --gpui` (alias `--native`, needs Rust/Cargo; see `toc-gpui/README.md`). Terminal output remains the default fallback. Toggles live in `brain/toc-config.md` (defaults keep the human in charge).
+**TOC:** When the user asks Command `give me the dashboard` or `TOC`, Command runs `./scripts/toc.sh` and relays the output. Optional localhost web dashboard: `./scripts/toc.sh --web` (`--port`, `--no-open`, env `TFN_TOC_PORT`) at `http://127.0.0.1:<PORT>`. Optional native GPUI desktop: `./scripts/toc.sh --gpui` (alias `--native`, needs Rust/Cargo; see `toc-gpui/README.md`). Terminal output remains the default fallback. Toggles live in `brain/toc-config.md` (defaults keep the human in charge). `./scripts/verify.sh` stays Rust-free by default; GPUI regression coverage is `scripts/test_toc_gpui.sh` plus `.github/workflows/toc-gpui.yml` (opt in locally with `VERIFY_RUN_GPUI=1` when `cargo` is installed).
 
 **Delegation:** `DELEGATE_BLOCKERS=true` lets Command resolve blockers from `brain/` context. `DELEGATE_EXTERNAL=true` lets Command approve external publishes and destructive actions. Both default to `false`.
 

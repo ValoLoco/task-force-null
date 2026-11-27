@@ -142,6 +142,18 @@ check_no_em_dashes() {
 
 echo "verify: repo=${REPO_ROOT}"
 
+if [[ "${VERIFY_RUN_GPUI:-0}" == "1" ]] && command -v cargo >/dev/null 2>&1; then
+  run_check "test_toc_gpui.sh (VERIFY_RUN_GPUI=1)" "${REPO_ROOT}/scripts/test_toc_gpui.sh"
+elif [[ "${VERIFY_RUN_GPUI:-0}" == "1" ]]; then
+  echo "NOTE: VERIFY_RUN_GPUI=1 but cargo not found; skipped scripts/test_toc_gpui.sh"
+elif command -v cargo >/dev/null 2>&1; then
+  echo "NOTE: Native GPUI checks live in scripts/test_toc_gpui.sh and .github/workflows/toc-gpui.yml"
+  echo "      (optional). Re-run with VERIFY_RUN_GPUI=1 to include GPUI here."
+else
+  echo "NOTE: toc-gpui/ is covered by scripts/test_toc_gpui.sh when Rust/Cargo is installed"
+  echo "      and by .github/workflows/toc-gpui.yml in CI. verify.sh stays Rust-free by default."
+fi
+
 run_check "scripts/*.sh executable and bash -n" check_shell_scripts
 run_check "router.py py_compile and --test" check_router
 run_check "test_detect_models.sh" "${REPO_ROOT}/scripts/test_detect_models.sh"

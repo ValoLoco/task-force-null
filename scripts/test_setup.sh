@@ -62,6 +62,14 @@ probe_env() {
   env TFN_LLM_PROBE_HOST=127.0.0.1 "TFN_LLM_PROBE_PORT=${PROBE_PORT}" TFN_LLM_MODEL_SCAN=0 "$@"
 }
 
+GROK_ALIAS_OUT="$(
+  probe_env "${ROOT}/scripts/setup.sh" \
+    --dry-run --non-interactive --skip-llm --skip-keys --skip-deploy \
+    --harness grok 2>&1
+)" || true
+echo "$GROK_ALIAS_OUT" | grep -q 'using harness: grok-bot' \
+  || { echo "FAIL: --harness grok must normalize to grok-bot" >&2; echo "$GROK_ALIAS_OUT"; exit 1; }
+
 OUT="$(probe_env "${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-llm --skip-keys --skip-deploy --harness generic 2>&1)" || true
 echo "$OUT" | grep -q '\[dry-run\]' || { echo "FAIL: dry-run markers missing" >&2; echo "$OUT"; exit 1; }
 

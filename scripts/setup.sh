@@ -31,7 +31,7 @@ Options:
   --install-llm          Accept Inkling 2 Mini download (required with --non-interactive)
   --skip-keys            Skip API key prompts
   --skip-deploy          Skip sync/detect/deploy bootstrap
-  --harness NAME         hermes|pi|claude|grok|cursor|generic
+  --harness NAME         hermes|pi|claude|grok-bot|cursor|generic (grok aliases to grok-bot)
   --mission-slug SLUG    Mission folder name for deploy-squad.sh
   --install-harness NAME Install hermes or pi if missing (non-interactive)
 
@@ -61,6 +61,16 @@ done
 
 [[ -n "${SETUP_HARNESS:-}" && -z "$CHOSEN_HARNESS" ]] && CHOSEN_HARNESS="$SETUP_HARNESS"
 [[ -n "${TFN_HARNESS:-}" && -z "$CHOSEN_HARNESS" ]] && CHOSEN_HARNESS="$TFN_HARNESS"
+
+normalize_harness_token() {
+  case "${1:-}" in
+    grok) printf 'grok-bot' ;;
+    "") printf '' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+[[ -n "$CHOSEN_HARNESS" ]] && CHOSEN_HARNESS="$(normalize_harness_token "$CHOSEN_HARNESS")"
 
 tfn_llm_probe_host() {
   printf '%s' "${TFN_LLM_PROBE_HOST:-127.0.0.1}"
@@ -196,7 +206,7 @@ detect_harness_list() {
     found+=("claude")
   fi
   if [[ -n "${GROK_BOT:-}" || -n "${XAI_API_KEY:-}" ]]; then
-    found+=("grok")
+    found+=("grok-bot")
   fi
   if [[ -n "${CURSOR_AGENT:-}" || -n "${CURSOR_TRACE_ID:-}" ]] || [[ -d "/cursor/stores" ]]; then
     found+=("cursor")
@@ -213,6 +223,7 @@ detect_harness_list() {
 
 choose_harness() {
   if [[ -n "$CHOSEN_HARNESS" ]]; then
+    CHOSEN_HARNESS="$(normalize_harness_token "$CHOSEN_HARNESS")"
     log "using harness: $CHOSEN_HARNESS"
     return 0
   fi
@@ -236,14 +247,14 @@ choose_harness() {
     return 0
   fi
   if [[ ${#detected[@]} -eq 1 ]]; then
-    CHOSEN_HARNESS="${detected[0]}"
+    CHOSEN_HARNESS="$(normalize_harness_token "${detected[0]}")"
     if ! prompt_yes_no "Use harness '${CHOSEN_HARNESS}'?" y; then
       CHOSEN_HARNESS="generic"
     fi
     return 0
   fi
   if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
-    CHOSEN_HARNESS="${detected[0]}"
+    CHOSEN_HARNESS="$(normalize_harness_token "${detected[0]}")"
     return 0
   fi
   local i=1
@@ -253,7 +264,7 @@ choose_harness() {
   done
   read -r -p "Select harness [1]: " sel || true
   sel="${sel:-1}"
-  CHOSEN_HARNESS="${detected[$((sel - 1))]:-${detected[0]}}"
+  CHOSEN_HARNESS="$(normalize_harness_token "${detected[$((sel - 1))]:-${detected[0]}}")"
   log "selected: $CHOSEN_HARNESS"
 }
 
@@ -513,7 +524,7 @@ set_env_val() {
 
 prompt_api_keys() {
   [[ "$SKIP_KEYS" -eq 1 ]] && { log "skip API keys"; return 0; }
-  local keys=(NVIDIA_API_KEY OPENAI_API_KEY XAI_API_KEY)
+  local keys=(NVIDIA_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY XAI_API_KEY)
   for key in "${keys[@]}"; do
     local cur=""
     cur="$(get_env_val "$key" 2>/dev/null || true)"
@@ -549,7 +560,7 @@ deploy_harness_notes() {
     hermes) log "Hermes: set workspace to ${REPO_ROOT}; see harnesses/hermes-agent.md" ;;
     pi) log "Pi: set workspace to ${REPO_ROOT}; see harnesses/pi-agent.md" ;;
     claude) log "Claude Code: open ${REPO_ROOT} as project root" ;;
-    grok) log "Grok Bot: mount repo and load AGENTS.md" ;;
+    grok-bot|grok) log "Grok Bot: mount repo and load AGENTS.md" ;;
     cursor) log "Cursor: agent workspace at ${REPO_ROOT}" ;;
     *) log "Generic: load AGENTS.md and profiles from ${REPO_ROOT}" ;;
   esac
