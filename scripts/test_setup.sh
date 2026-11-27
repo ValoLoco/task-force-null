@@ -4,8 +4,24 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_BACKUP=""
+MOCK_PID=""
+PROBE_PORT="${TFN_TEST_PROBE_PORT:-}"
+
+closed_probe_port() {
+  python3 - <<'PY'
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+}
 
 cleanup() {
+  if [[ -n "${MOCK_PID:-}" ]] && kill -0 "$MOCK_PID" 2>/dev/null; then
+    kill -TERM "$MOCK_PID" 2>/dev/null || true
+    wait "$MOCK_PID" 2>/dev/null || true
+  fi
   if [[ -n "$ENV_BACKUP" && -f "$ENV_BACKUP" ]]; then
     mv "$ENV_BACKUP" "${ROOT}/.env"
   fi
@@ -41,7 +57,12 @@ fi
 [[ "$mode" == "600" ]] || { echo "FAIL: .env mode not 600 (${mode})" >&2; exit 1; }
 grep -q '^\.env$' "${ROOT}/.gitignore" || { echo "FAIL: .gitignore missing .env" >&2; exit 1; }
 
-OUT="$("${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-llm --skip-keys --skip-deploy --harness generic 2>&1)" || true
+PROBE_PORT="${PROBE_PORT:-$(closed_probe_port)}"
+probe_env() {
+  env TFN_LLM_PROBE_HOST=127.0.0.1 "TFN_LLM_PROBE_PORT=${PROBE_PORT}" "$@"
+}
+
+OUT="$(probe_env "${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-llm --skip-keys --skip-deploy --harness generic 2>&1)" || true
 echo "$OUT" | grep -q '\[dry-run\]' || { echo "FAIL: dry-run markers missing" >&2; echo "$OUT"; exit 1; }
 
 assert_declined() {
@@ -58,16 +79,62 @@ assert_declined() {
   fi
 }
 
-SKIP_OUT="$("${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-llm --skip-keys --skip-deploy --harness generic 2>&1)" || true
+SKIP_OUT="$(probe_env "${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-llm --skip-keys --skip-deploy --harness generic 2>&1)" || true
 assert_declined "skip-llm" "$SKIP_OUT"
 
-NON_OUT="$("${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-keys --skip-deploy --harness generic 2>&1)" || true
+NON_OUT="$(probe_env "${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-keys --skip-deploy --harness generic 2>&1)" || true
 assert_declined "non-interactive" "$NON_OUT"
 
-ANS_OUT="$(printf 'n\n' | "${ROOT}/scripts/setup.sh" --dry-run --skip-keys --skip-deploy --harness generic 2>&1)" || true
+ANS_OUT="$(printf 'n\n' | probe_env "${ROOT}/scripts/setup.sh" --dry-run --skip-keys --skip-deploy --harness generic 2>&1)" || true
 echo "$ANS_OUT" | grep -F -q '[y/N]' || { echo "FAIL: decline prompt missing [y/N]" >&2; echo "$ANS_OUT"; exit 1; }
 echo "$ANS_OUT" | grep -F -q '6.5 GB' || { echo "FAIL: prompt missing 6.5 GB" >&2; echo "$ANS_OUT"; exit 1; }
 echo "$ANS_OUT" | grep -F -q 'AD IQ1_S' || { echo "FAIL: prompt missing AD IQ1_S" >&2; echo "$ANS_OUT"; exit 1; }
 assert_declined "answer n" "$ANS_OUT"
+
+MOCK_PORT="$(closed_probe_port)"
+MOCK_SCRIPT="$(mktemp)"
+cat >"$MOCK_SCRIPT" <<'PY'
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import sys
+
+PORT = int(sys.argv[1])
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_args):
+        return
+
+    def do_GET(self):
+        if self.path in ("/health", "/v1/models"):
+            body = b'{"status":"ok"}' if self.path == "/health" else b'{"data":[{"id":"mock"}]}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+
+HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+PY
+
+python3 "$MOCK_SCRIPT" "$MOCK_PORT" &
+MOCK_PID=$!
+sleep 0.3
+
+MOCK_OUT="$(env TFN_LLM_PROBE_HOST=127.0.0.1 "TFN_LLM_PROBE_PORT=${MOCK_PORT}" \
+  "${ROOT}/scripts/setup.sh" --dry-run --non-interactive --skip-keys --skip-deploy --harness generic 2>&1)" || true
+echo "$MOCK_OUT" | grep -q 'detected local model server at' \
+  || { echo "FAIL: mock LLM server not detected" >&2; echo "$MOCK_OUT"; exit 1; }
+echo "$MOCK_OUT" | grep -q "http://127.0.0.1:${MOCK_PORT}" \
+  || { echo "FAIL: mock probe base URL missing" >&2; echo "$MOCK_OUT"; exit 1; }
+
+kill -TERM "$MOCK_PID" 2>/dev/null || true
+wait "$MOCK_PID" 2>/dev/null || true
+MOCK_PID=""
+rm -f "$MOCK_SCRIPT"
 
 echo "test_setup: ok"

@@ -8,8 +8,11 @@ ENV_TARGET=""
 AGENTS_FILE="${REPO_ROOT}/AGENTS.md"
 MODELS_FILE="${REPO_ROOT}/brain/models.md"
 
+HARNESS_OVERRIDE=""
+
 usage() {
-  echo "Usage: $0 [--slug SLUG] [--env-file PATH] [--repo-root PATH]"
+  echo "Usage: $0 [--slug SLUG] [--env-file PATH] [--repo-root PATH] [--harness NAME]"
+  echo "Env: TFN_HARNESS (overrides automatic harness detection)"
   exit 1
 }
 
@@ -18,6 +21,7 @@ while [[ $# -gt 0 ]]; do
     --slug) SLUG="$2"; shift 2 ;;
     --env-file) ENV_TARGET="$2"; shift 2 ;;
     --repo-root) REPO_ROOT="$2"; MODELS_FILE="${REPO_ROOT}/brain/models.md"; AGENTS_FILE="${REPO_ROOT}/AGENTS.md"; shift 2 ;;
+    --harness) HARNESS_OVERRIDE="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) echo "unknown arg: $1" >&2; usage ;;
   esac
@@ -59,19 +63,40 @@ fi
 mkdir -p "${REPO_ROOT}/brain"
 
 detect_harness() {
+  if [[ -n "${TFN_HARNESS:-}" ]]; then
+    echo "$TFN_HARNESS"
+    return 0
+  fi
+  if [[ -n "$HARNESS_OVERRIDE" ]]; then
+    echo "$HARNESS_OVERRIDE"
+    return 0
+  fi
+  if [[ -n "${GROK_BOT:-}" || -n "${GROK_BOT_CLAIM_PRINCIPAL:-}" || -n "${SAND_BOX_BOOT_ID:-}" ]] \
+    || [[ -d /home/box/agent-data ]]; then
+    echo "grok-bot"
+    return 0
+  fi
   if [[ -n "${CURSOR_TRACE_ID:-}" || -n "${CURSOR_AGENT:-}" ]]; then
     echo "cursor"
-  elif command -v pi >/dev/null 2>&1; then
-    echo "pi"
-  elif [[ -n "${CLAUDE_CODE:-}" || -n "${CLAUDE_CODE_SSE_PORT:-}" ]] || command -v claude >/dev/null 2>&1; then
-    echo "claude-code"
-  elif [[ -n "${HERMES_BIN:-}" || -n "${HERMES_HOME:-}" ]] || command -v hermes >/dev/null 2>&1; then
-    echo "hermes"
-  elif [[ -n "${GROK_BOT:-}" || -n "${XAI_API_KEY:-}" ]]; then
-    echo "grok-bot"
-  else
-    echo "generic"
+    return 0
   fi
+  if command -v pi >/dev/null 2>&1; then
+    echo "pi"
+    return 0
+  fi
+  if [[ -n "${CLAUDE_CODE:-}" || -n "${CLAUDE_CODE_SSE_PORT:-}" ]] || command -v claude >/dev/null 2>&1; then
+    echo "claude-code"
+    return 0
+  fi
+  if [[ -n "${HERMES_BIN:-}" || -n "${HERMES_HOME:-}" ]] || command -v hermes >/dev/null 2>&1; then
+    echo "hermes"
+    return 0
+  fi
+  if [[ -n "${XAI_API_KEY:-}" ]]; then
+    echo "grok-bot"
+    return 0
+  fi
+  echo "generic"
 }
 
 HARNESS="$(detect_harness)"

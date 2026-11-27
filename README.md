@@ -170,7 +170,7 @@ GitHub Actions runs the same script on pushes and pull requests targeting `main`
 ./scripts/toc.sh --toggle
 ```
 
-`--web` runs `scripts/toc-web.py` on `127.0.0.1` only. It prints `http://127.0.0.1:<PORT>` (use `--port 0` or omit port for an ephemeral port). Set `TFN_TOC_PORT` to pick a port. Use `--no-open` to skip the browser. Real-time updates use Server-Sent Events. If the web server is unavailable, use the text dashboard above.
+`--web` runs `scripts/toc-web.py` on `127.0.0.1` only. It prints `http://127.0.0.1:<PORT>` (use `--port 0` or omit port for an ephemeral port). Set `TFN_TOC_PORT` to pick a port. Use `--no-open` to skip the browser. Real-time updates use Server-Sent Events. Stream operator output live with `./scripts/op-log.sh <mission> <role> -- <cmd>` (writes UTC-timestamped lines under `missions/<mission>/logs/<role>.log` for the dashboard). If the web server is unavailable, use the text dashboard above.
 
 Ask Command for `give me the dashboard` or `TOC`. Command runs `./scripts/toc.sh` and relays the output.
 
