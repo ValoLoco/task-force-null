@@ -38,4 +38,13 @@ grep -q '^Harness: pi$' "$HARNESS_LOG2" || {
   exit 1
 }
 
+HARNESS_LOG3="$TMP/harness-grok.log"
+CURSOR_AGENT=1 GROK_BOT_CLAIM_PRINCIPAL=test "${ROOT}/scripts/detect-models.sh" --repo-root "$TMP" --slug example-mission \
+  --env-file "${TMP}/missions/example-mission/squad.env" >"$HARNESS_LOG3" 2>&1
+grep -q '^Harness: grok-bot$' "$HARNESS_LOG3" || {
+  echo "FAIL: GROK_BOT_CLAIM_PRINCIPAL must beat CURSOR_AGENT (expected grok-bot)" >&2
+  cat "$HARNESS_LOG3" >&2
+  exit 1
+}
+
 echo "test_detect_models: ok"
