@@ -90,7 +90,7 @@ Interactive first-time bootstrap. Idempotent and safe to re-run (preserves exist
 |------|----------------|
 | 1. Harness detection | Detects Hermes, **Pi Coding Agent** (`pi`), Claude, Grok, Cursor (see [`harnesses/`](harnesses/README.md)). |
 | 2. Harness install (optional) | **Hermes:** `pip install --user hermes-agent`. **Pi:** Linux/macOS `curl -fsSL https://pi.dev/install.sh \| sh` then `pi install npm:pi-agents` (pulls durable sub-agents); Windows `irm https://pi.dev/install.ps1 \| iex` then `pi install npm:pi-agents`. |
-| 3. Local LLM (opt-in) | Detect a running server on `127.0.0.1:8080` (llama-server / Inkling), `:11434` (Ollama), or `:8000` (vLLM), or an installed model under `LOCAL_LLM_DIR`, `/workspace/local-llm`, `~/local-llm`, `~/.cache/llama.cpp`, common `*.gguf` paths, or Ollama manifests. If one is found, setup skips the download and prints the endpoint or path. If none is found, setup asks before **Inkling 2 Mini (6.5 GB AD IQ1_S quant)**. The prompt is `[y/N]` and the default is **No**. Nothing downloads unless you accept. `--non-interactive` without `--install-llm` declines. `--skip-llm` skips the step. Declining continues setup and states that API keys in `.env` or a remote inference endpoint are required, then moves on to API keys and squad bootstrap. |
+| 3. Local LLM (opt-in) | Detect a running server on `127.0.0.1:8080` (llama-server / Inkling), `:11434` (Ollama), or `:8000` (vLLM), or an installed model under `LOCAL_LLM_DIR`, `/workspace/local-llm`, `~/local-llm`, `~/.cache/llama.cpp`, common `*.gguf` paths, or Ollama manifests. If one is found, setup skips the download and prints the endpoint or path. If none is found, setup measures RAM, GPU VRAM (when available), and free disk, then picks a quant from [`unsloth/Inkling-2-Mini-GGUF`](https://huggingface.co/unsloth/Inkling-2-Mini-GGUF) when hardware fits (`UD-Q8_K_XL` through `UD-IQ1_S`). Below 12 GB effective memory or insufficient disk, setup **does not** recommend a heavy local download and points you at host or cloud inference (override with `INKLING_QUANT` or `INKLING_MODEL_URL`). The prompt is `[y/N]` and defaults to **No**. `--non-interactive` without `--install-llm` declines. `--skip-llm` skips the step. Test overrides: `TFN_DETECT_RAM_GB`, `TFN_DETECT_VRAM_GB`, `TFN_DETECT_DISK_GB`. Declining continues setup and states that API keys in `.env` or a remote inference endpoint are required, then moves on to API keys and squad bootstrap. |
 | 4. API keys (optional) | Masked prompts for `NVIDIA_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY` into gitignored `.env` (empty input keeps existing values; `chmod 600` on Unix). |
 | 5. Bootstrap | `sync-armory.sh --allow-offline`, `detect-models.sh`, `deploy-squad.sh`, `start.sh`. |
 
@@ -98,7 +98,7 @@ Interactive first-time bootstrap. Idempotent and safe to re-run (preserves exist
 |------|--------|
 | Dry run | `./scripts/setup.sh --dry-run` or `.\scripts\setup.ps1 -DryRun` |
 | CI / automation | `./scripts/setup.sh --non-interactive --skip-llm --harness cursor --mission-slug my-squad` |
-| Download Inkling in CI | Add `--install-llm` (or `-InstallLlm`). Without it, non-interactive setup declines the 6.5 GB quant. |
+| Download Inkling in CI | Add `--install-llm` (or `-InstallLlm`). Without it, non-interactive setup declines local Inkling. |
 | Skip bootstrap | `--skip-deploy` / `-SkipDeploy` |
 
 On **Windows Git Bash**, `setup.sh` delegates to `setup.ps1` when PowerShell is available (`SETUP_BASH_ONLY=1` forces bash-only).
@@ -186,6 +186,8 @@ GitHub Actions runs the same script on pushes and pull requests targeting `main`
 Stream operator output live with `./scripts/op-log.sh <mission> <role> -- <cmd>` (writes UTC-timestamped lines under `missions/<mission>/logs/<role>.log` for the dashboard). If the web or native dashboard is unavailable, use the text dashboard above.
 
 Ask Command for `give me the dashboard` or `TOC`. Command runs `./scripts/toc.sh` and relays the output.
+
+**Non-default clone path:** when the repo is not checked out where scripts expect, pass `--repo-root /path/to/task-force-null` on `./scripts/toc.sh`, `./scripts/toc.sh --web`, `./scripts/detect-models.sh`, and `./scripts/op-log.sh` (setup scripts infer repo root from their own location).
 
 Config: [`brain/toc-config.md`](brain/toc-config.md).
 

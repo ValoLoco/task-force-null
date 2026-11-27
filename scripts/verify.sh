@@ -48,6 +48,14 @@ check_router() {
     python3 "${REPO_ROOT}/scripts/router.py" --test
 }
 
+check_toc_python() {
+  local f ok=0
+  for f in toc_lib.py toc_config.py toc_mission.py toc_state.py toc_render.py toc-web.py; do
+    python3 -m py_compile "${REPO_ROOT}/scripts/${f}" || ok=1
+  done
+  [[ "$ok" -eq 0 ]]
+}
+
 check_sync_armory() {
   local pinned="${REPO_ROOT}/armory/ecc/PINNED_SHA"
   if [[ ! -f "$pinned" ]] || [[ ! -s "$pinned" ]]; then
@@ -89,23 +97,34 @@ check_license_readme() {
 }
 
 check_setup_artifacts() {
-  local ok=0 ps1="${REPO_ROOT}/scripts/setup.ps1"
-  [[ -f "$ps1" ]] || { echo "missing setup.ps1" >&2; ok=1; }
+  local ok=0 ps1 shell_cmd f
+  local ps_files=(setup.ps1 inkling_detect.ps1)
+  [[ -f "${REPO_ROOT}/scripts/setup.ps1" ]] || { echo "missing setup.ps1" >&2; ok=1; }
+  [[ -f "${REPO_ROOT}/scripts/inkling_detect.ps1" ]] || { echo "missing inkling_detect.ps1" >&2; ok=1; }
   [[ -f "${REPO_ROOT}/scripts/setup.bat" ]] || { echo "missing setup.bat" >&2; ok=1; }
+  shell_cmd=""
   if command -v pwsh >/dev/null 2>&1; then
-    pwsh -NoProfile -Command "
-      \$e = \$null; \$t = \$null
-      [void][System.Management.Automation.Language.Parser]::ParseFile('$ps1', [ref]\$t, [ref]\$e)
-      if (\$e.Count -gt 0) { \$e | ForEach-Object { Write-Error \$_.ToString() }; exit 1 }
-    " || ok=1
+    shell_cmd="pwsh"
   elif command -v powershell >/dev/null 2>&1; then
-    powershell -NoProfile -Command "
-      \$e = \$null; \$t = \$null
-      [void][System.Management.Automation.Language.Parser]::ParseFile('$ps1', [ref]\$t, [ref]\$e)
-      if (\$e.Count -gt 0) { \$e | ForEach-Object { Write-Error \$_.ToString() }; exit 1 }
-    " || ok=1
+    shell_cmd="powershell"
+  fi
+  if [[ -n "$shell_cmd" ]]; then
+    for f in "${ps_files[@]}"; do
+      ps1="${REPO_ROOT}/scripts/${f}"
+      [[ -f "$ps1" ]] || continue
+      if ! "$shell_cmd" -NoProfile -Command "
+        \$e = \$null; \$t = \$null
+        [void][System.Management.Automation.Language.Parser]::ParseFile('$ps1', [ref]\$t, [ref]\$e)
+        if (\$e.Count -gt 0) { \$e | ForEach-Object { Write-Error \$_.ToString() }; exit 1 }
+      "; then
+        echo "PowerShell parse failed: $ps1" >&2
+        ok=1
+      fi
+    done
   else
-    grep -q 'param' "$ps1" && grep -q 'function Write-SetupLog' "$ps1" || ok=1
+    grep -q 'param' "${REPO_ROOT}/scripts/setup.ps1" \
+      && grep -q 'function Write-SetupLog' "${REPO_ROOT}/scripts/setup.ps1" || ok=1
+    grep -q 'function Select-InklingQuant' "${REPO_ROOT}/scripts/inkling_detect.ps1" || ok=1
   fi
   [[ "$ok" -eq 0 ]]
 }
@@ -156,6 +175,8 @@ fi
 
 run_check "scripts/*.sh executable and bash -n" check_shell_scripts
 run_check "router.py py_compile and --test" check_router
+run_check "toc python modules py_compile" check_toc_python
+run_check "test_op_log.sh" "${REPO_ROOT}/scripts/test_op_log.sh"
 run_check "test_detect_models.sh" "${REPO_ROOT}/scripts/test_detect_models.sh"
 run_check "sync-armory offline-safe and PINNED_SHA" check_sync_armory
 run_check "test_setup.sh" "${REPO_ROOT}/scripts/test_setup.sh"

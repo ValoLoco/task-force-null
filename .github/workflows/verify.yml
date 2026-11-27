@@ -22,5 +22,45 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Shellcheck scripts
+        run: shellcheck -S warning scripts/*.sh
+
       - name: Run verify.sh
         run: ./scripts/verify.sh
+
+  verify-windows:
+    runs-on: windows-latest
+    env:
+      VERIFY_SKIP_ONLINE_SYNC: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: PowerShell syntax check setup scripts
+        shell: pwsh
+        run: |
+          $paths = @(
+            "$PWD/scripts/setup.ps1",
+            "$PWD/scripts/inkling_detect.ps1"
+          )
+          foreach ($path in $paths) {
+            $e = $null
+            $t = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$t, [ref]$e)
+            if ($e.Count -gt 0) {
+              $e | ForEach-Object { Write-Error "$path : $_" }
+              exit 1
+            }
+          }
+
+      - name: setup.ps1 dry-run (isolated probe)
+        shell: pwsh
+        env:
+          TFN_LLM_PROBE_PORT: "18080"
+          TFN_LLM_MODEL_SCAN: "0"
+        run: |
+          ./scripts/setup.ps1 -DryRun -NonInteractive -SkipLlm -SkipKeys -SkipDeploy -Harness generic

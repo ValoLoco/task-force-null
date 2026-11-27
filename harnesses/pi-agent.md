@@ -27,6 +27,8 @@ irm https://pi.dev/install.ps1 | iex
 npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 ```
 
+Same npm package as documented in the root `README.md` and Termux quick install. Prefer `https://pi.dev/install.sh` (or `install.ps1` on Windows) when you want the upstream installer; use npm when you already standardize on a global Node toolchain.
+
 Confirm `pi` is on `PATH` before installing extensions.
 
 ## Multi-agent extension (Pi Agents)
@@ -49,7 +51,7 @@ command -v pi && pi --version
 
 ## Task Force Null deploy
 
-1. Run `./scripts/setup.sh` (or `scripts\setup.ps1` on Windows) and select **Pi** when prompted, or follow the commands above manually.
+1. Run `./scripts/setup.sh` (or `scripts\setup.ps1` on Windows) and select **Pi** when prompted, or run `curl -fsSL https://pi.dev/install.sh | sh` (or `install.ps1`) then `pi install npm:pi-agents` manually.
 2. Point the Pi workspace or project root at this repository (`REPO_ROOT`).
 3. Load `AGENTS.md`, `brain/playbooks/`, `profiles/`, and the active `missions/<slug>/` folder.
 4. ECC: read-only from `armory/ecc/`; never run ECC installers or hooks.

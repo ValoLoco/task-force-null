@@ -4,9 +4,10 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=inkling_detect.sh
+source "$(dirname "$0")/inkling_detect.sh"
 LOCAL_LLM_DIR="${LOCAL_LLM_DIR:-/workspace/local-llm}"
-WEIGHTS_FILE="${LOCAL_LLM_DIR}/weights/Inkling-2-Mini-AD-IQ1_S.gguf"
-ENSURE_SCRIPT="${LOCAL_LLM_DIR}/ensure-running.sh"
+WEIGHTS_FILE=""
 MISSION_SLUG="${SETUP_MISSION_SLUG:-}"
 DRY_RUN=0
 NON_INTERACTIVE=0
@@ -35,7 +36,8 @@ Options:
   --mission-slug SLUG    Mission folder name for deploy-squad.sh
   --install-harness NAME Install hermes or pi if missing (non-interactive)
 
-Env: SETUP_MISSION_SLUG, SETUP_HARNESS, SETUP_BASH_ONLY=1, LOCAL_LLM_DIR, INKLING_MODEL_URL,
+Env: SETUP_MISSION_SLUG, SETUP_HARNESS, SETUP_BASH_ONLY=1, LOCAL_LLM_DIR, INKLING_MODEL_URL, INKLING_QUANT,
+     TFN_DETECT_RAM_GB, TFN_DETECT_VRAM_GB, TFN_DETECT_DISK_GB,
      TFN_LLM_PROBE_URL, TFN_LLM_PROBE_HOST, TFN_LLM_PROBE_PORT, TFN_HARNESS,
      TFN_LLM_MODEL_SCAN=0 (skip on-disk model scan), TFN_LLM_SEARCH_DIRS (colon-separated roots)
 Windows Git Bash: prefers delegation to scripts/setup.ps1 (set SETUP_BASH_ONLY=1 to stay in bash).
@@ -436,15 +438,71 @@ detect_installed_model() {
   return 1
 }
 
+inkling_skip_reason_message() {
+  local weights_dir="${LOCAL_LLM_DIR}/weights"
+  local sel
+  sel="$(tfn_inkling_select_quant "$weights_dir")" || true
+  case "$sel" in
+    skip_low_memory)
+      log "local Inkling not recommended: effective RAM/VRAM below 12 GB after OS headroom"
+      log "use host or cloud inference (API keys in .env) or set INKLING_QUANT / INKLING_MODEL_URL to override"
+      ;;
+    skip_low_disk)
+      log "local Inkling not recommended: insufficient free disk under ${weights_dir}"
+      log "use host or cloud inference or free disk space, then re-run setup"
+      ;;
+    *)
+      log "local Inkling not recommended for this hardware profile"
+      log "use host or cloud inference or set INKLING_QUANT / INKLING_MODEL_URL to override"
+      ;;
+  esac
+}
+
+resolve_inkling_download() {
+  local weights_dir="${LOCAL_LLM_DIR}/weights"
+  local sel quant url file
+  sel="$(tfn_inkling_select_quant "$weights_dir")" || {
+    log "INKLING_QUANT is invalid; use UD-IQ1_S, UD-Q2_K_XL, UD-Q3_K_XL, UD-Q4_K_M, or UD-Q8_K_XL"
+    return 1
+  }
+  case "$sel" in
+    skip_low_memory|skip_low_disk)
+      inkling_skip_reason_message
+      return 1
+    ;;
+    explicit_url)
+      url="${INKLING_MODEL_URL}"
+      file="$(basename "$url")"
+      ;;
+    *)
+      quant="$sel"
+      url="$(tfn_inkling_model_url "$quant")"
+      file="$(tfn_inkling_weights_filename "$quant")"
+      log "selected Inkling quant ${quant} (${file}) for RAM/VRAM/disk profile"
+      ;;
+  esac
+  WEIGHTS_FILE="${weights_dir}/${file}"
+  printf '%s\n' "$url"
+}
+
 accept_llm_install() {
-  local ans
+  local ans weights_dir="${LOCAL_LLM_DIR}/weights" plan
   if [[ "$INSTALL_LLM" -eq 1 ]]; then
     return 0
   fi
   if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
     return 1
   fi
-  printf '%s' "Install Inkling 2 Mini (6.5 GB AD IQ1_S quant) on 127.0.0.1:8080? [y/N]: " >&2
+  plan="$(tfn_inkling_plan "$weights_dir")"
+  if echo "$plan" | grep -q '^action=skip'; then
+    inkling_skip_reason_message
+    return 1
+  fi
+  local hint="Inkling 2 Mini (auto quant from unsloth/Inkling-2-Mini-GGUF)"
+  if echo "$plan" | grep -q '^quant='; then
+    hint="$(echo "$plan" | awk -F= '/^quant=/ {print "Inkling 2 Mini quant "$2}')"
+  fi
+  printf '%s' "Install ${hint} on 127.0.0.1:8080? [y/N]: " >&2
   read -r ans || true
   [[ "${ans:-N}" =~ ^[Yy]([Ee][Ss])?$ ]]
 }
@@ -469,12 +527,19 @@ setup_local_llm() {
     note_llm_skipped
     return 0
   fi
-  local url="${INKLING_MODEL_URL:-https://huggingface.co/FUN-GAL/Inkling-2-Mini-gguf/resolve/main/Inkling-2-Mini-AD-IQ1_S.gguf}"
   run_cmd mkdir -p "${LOCAL_LLM_DIR}/weights"
-  if [[ ! -f "$WEIGHTS_FILE" ]]; then
+  local url
+  url="$(resolve_inkling_download)" || {
+    note_llm_skipped
+    return 0
+  }
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "[dry-run] would download Inkling weights to ${WEIGHTS_FILE}"
+    log "[dry-run] url: ${url}"
+  elif [[ ! -f "$WEIGHTS_FILE" ]]; then
     run_cmd curl -fL --progress-bar -o "$WEIGHTS_FILE" "$url"
   else
-    log "weights already present"
+    log "weights already present at ${WEIGHTS_FILE}"
   fi
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "[dry-run] would start llama-server on :8080"
@@ -566,6 +631,14 @@ deploy_harness_notes() {
   esac
 }
 
+print_toc_hint() {
+  local toc="${REPO_ROOT}/scripts/toc.sh"
+  log "Next: ${toc}"
+  log "      ${toc} --web"
+  log "      ${toc} --gpui"
+  log "      ${toc} --repo-root \"${REPO_ROOT}\"  (non-default clone path)"
+}
+
 bootstrap_deploy() {
   [[ "$SKIP_DEPLOY" -eq 1 ]] && { log "skip bootstrap deploy"; return 0; }
   [[ -z "$MISSION_SLUG" ]] && MISSION_SLUG="$DEFAULT_SLUG"
@@ -609,6 +682,7 @@ main() {
   setup_local_llm
   prompt_api_keys
   bootstrap_deploy
+  print_toc_hint
   log "setup complete"
 }
 

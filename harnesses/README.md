@@ -7,7 +7,7 @@ Task Force Null deploys into a host AI harness. **Pi Coding Agent** is the **rec
 | **Pi Coding Agent (default)** | [pi-agent.md](pi-agent.md) | `pi --version` |
 | Hermes Agent | [hermes-agent.md](hermes-agent.md) | `hermes --version` or `$HERMES_HOME` |
 | Claude Code | Vendor install; workspace at repo root | `claude --version` |
-| Grok Bot | [Published Task Force Null Command template](https://x.ai/bot/zBFQAAO1GAvF30CG0mr6I) or vendor / MCP setup | `XAI_API_KEY` or host env |
+| Grok Bot | [grok-bot.md](grok-bot.md) and [published template](https://x.ai/bot/zBFQAAO1GAvF30CG0mr6I) | `XAI_API_KEY` or host env |
 | Cursor | Cloud or desktop agent | `CURSOR_AGENT` / agent workspace |
 
 `./scripts/setup.sh` (or `scripts/setup.ps1` on Windows) detects installed harnesses and offers guided install for **Pi** or **Hermes** when none are present.
