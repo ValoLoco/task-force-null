@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-python3 -m py_compile "${ROOT}/scripts/toc_lib.py" "${ROOT}/scripts/toc_chat.py" "${ROOT}/scripts/toc-web.py"
+python3 -m py_compile "${ROOT}/scripts/toc_lib.py" "${ROOT}/scripts/toc_chat.py" "${ROOT}/scripts/toc_actions.py" "${ROOT}/scripts/toc-web.py"
 
 TMP="$(mktemp -d)"
 trap 'cleanup' EXIT INT TERM
@@ -140,6 +140,72 @@ assert sys.argv[2] in texts, 'GET /api/chat missing posted message'
 BAD_CODE="$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/chat?mission=../etc&limit=10")"
 [[ "$BAD_CODE" == "400" ]] || {
   echo "FAIL: invalid mission slug expected 400 got $BAD_CODE" >&2
+  exit 1
+}
+
+BOARD_MOVE="$(curl -sS -w '\n%{http_code}' -X POST "$URL/api/board/move" \
+  -H 'Content-Type: application/json' \
+  -d '{"mission":"setup-mission","task_id":"T-1","status":"doing"}')"
+BOARD_HTTP="$(echo "$BOARD_MOVE" | tail -1)"
+BOARD_BODY="$(echo "$BOARD_MOVE" | sed '$d')"
+[[ "$BOARD_HTTP" == "200" ]] || {
+  echo "FAIL: POST /api/board/move expected 200 got $BOARD_HTTP" >&2
+  echo "$BOARD_BODY" >&2
+  exit 1
+}
+python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+assert d['mission'] == 'setup-mission'
+assert d['task']['id'] == 'T-1'
+assert d['task']['status'] == 'doing'
+" "$BOARD_BODY"
+grep -q '| T-1 | Alpha | lead | doing | ok |' "${TMP}/missions/setup-mission/board.md" || {
+  echo "FAIL: board.md not updated after move" >&2
+  cat "${TMP}/missions/setup-mission/board.md" >&2
+  exit 1
+}
+
+BAD_SLUG="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/api/board/move" \
+  -H 'Content-Type: application/json' \
+  -d '{"mission":"../etc","task_id":"T-1","status":"doing"}')"
+[[ "$BAD_SLUG" == "400" ]] || {
+  echo "FAIL: board move bad slug expected 400 got $BAD_SLUG" >&2
+  exit 1
+}
+
+UNKNOWN_TASK="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/api/board/move" \
+  -H 'Content-Type: application/json' \
+  -d '{"mission":"setup-mission","task_id":"T-404","status":"doing"}')"
+[[ "$UNKNOWN_TASK" == "404" ]] || {
+  echo "FAIL: board move unknown task expected 404 got $UNKNOWN_TASK" >&2
+  exit 1
+}
+
+BAD_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/api/board/move" \
+  -H 'Content-Type: application/json' \
+  -d '{"mission":"setup-mission","task_id":"T-1","status":"not-a-status"}')"
+[[ "$BAD_STATUS" == "400" ]] || {
+  echo "FAIL: board move invalid status expected 400 got $BAD_STATUS" >&2
+  exit 1
+}
+
+TELEMETRY="$(curl -fsS "$URL/api/telemetry?mission=setup-mission")"
+python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+assert d['mission'] == 'setup-mission'
+assert 'operators' in d and isinstance(d['operators'], list)
+assert d['operators'], 'expected operator rows'
+row = d['operators'][0]
+for key in ('operator','active_tasks','done_tasks','blocked_tasks','log_lines','health'):
+    assert key in row, 'missing ' + key
+assert 'summary' in d
+" "$TELEMETRY"
+
+TELEMETRY_BAD="$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/telemetry?mission=../etc")"
+[[ "$TELEMETRY_BAD" == "400" ]] || {
+  echo "FAIL: telemetry bad slug expected 400 got $TELEMETRY_BAD" >&2
   exit 1
 }
 

@@ -21,10 +21,12 @@ from urllib.parse import parse_qs, urlparse
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
+import toc_actions  # noqa: E402
 import toc_chat  # noqa: E402
 import toc_lib  # noqa: E402
 
-ALLOWED_GET = {"/", "/api/state", "/api/chat", "/events"}
+ALLOWED_GET = {"/", "/api/state", "/api/chat", "/api/telemetry", "/events"}
+BOARD_MOVE_PATH = "/api/board/move"
 
 DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -639,6 +641,23 @@ def make_handler(ctx: TOCWebContext):
                 self.end_headers()
                 self.wfile.write(payload)
                 return
+            if path == "/api/telemetry":
+                qs = parse_qs(parsed.query)
+                mission = (qs.get("mission") or [""])[0]
+                err, status, payload = toc_actions.compute_operator_telemetry(
+                    ctx.repo_root, mission, ctx.state_snapshot()
+                )
+                if err:
+                    self._json_error(status, err)
+                    return
+                body = toc_actions.telemetry_json(payload or {})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if path == "/api/chat":
                 qs = parse_qs(parsed.query)
                 mission = (qs.get("mission") or [""])[0]
@@ -669,14 +688,17 @@ def make_handler(ctx: TOCWebContext):
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
-            if parsed.path != "/api/chat":
+            if parsed.path not in ("/api/chat", BOARD_MOVE_PATH):
                 self.send_error(404)
                 return
             length = int(self.headers.get("Content-Length", "0") or "0")
             if length <= 0:
                 self._json_error(400, "empty body")
                 return
-            if length > toc_chat.MAX_TEXT_BYTES + 4096:
+            max_len = toc_chat.MAX_TEXT_BYTES + 4096
+            if parsed.path == BOARD_MOVE_PATH:
+                max_len = toc_actions.MAX_BOARD_POST_BYTES
+            if length > max_len:
                 self._json_error(413, "payload too large")
                 return
             try:
@@ -687,6 +709,33 @@ def make_handler(ctx: TOCWebContext):
                 return
             if not isinstance(body, dict):
                 self._json_error(400, "body must be a json object")
+                return
+            if parsed.path == BOARD_MOVE_PATH:
+                err, status, mission, task_id, move_status = toc_actions.validate_board_move_body(
+                    body
+                )
+                if err:
+                    self._json_error(status, err)
+                    return
+                slug_err, slug_status = toc_chat.validate_mission_slug(ctx.repo_root, mission)
+                if slug_err:
+                    self._json_error(slug_status, slug_err)
+                    return
+                move_err, move_code, task = toc_actions.move_board_task(
+                    ctx.repo_root, mission, task_id, move_status
+                )
+                if move_err:
+                    self._json_error(move_code, move_err)
+                    return
+                payload = json.dumps(
+                    {"mission": mission, "task": task}, separators=(",", ":")
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
                 return
             err, status, mission, text = toc_chat.validate_post_body(body)
             if err:

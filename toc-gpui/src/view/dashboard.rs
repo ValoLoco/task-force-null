@@ -1,6 +1,11 @@
+use crate::actions::{
+    compute_operator_telemetry, move_board_task_local, next_task_status, post_board_move,
+    OperatorTelemetry,
+};
 use crate::chat::{
     append_jsonl_local, fetch_chat_http, load_mission_chat, post_chat_http, ChatMessage,
 };
+use crate::state::collect_state;
 use crate::feed::display::{connection_badge, BadgeTone};
 use crate::filter::{
     filter_activity_lines, mission_slugs_sorted, search_matches, OperatorChip,
@@ -30,6 +35,8 @@ pub struct TocDashboard {
     chat_input: String,
     chat_focused: bool,
     chat_error: Option<String>,
+    telemetry_open: bool,
+    board_action_error: Option<String>,
 }
 
 impl TocDashboard {
@@ -70,8 +77,49 @@ impl TocDashboard {
             chat_input: String::new(),
             chat_focused: false,
             chat_error: None,
+            telemetry_open: false,
+            board_action_error: None,
         };
         dash
+    }
+
+    fn toggle_telemetry(&mut self, cx: &mut Context<Self>) {
+        self.telemetry_open = !self.telemetry_open;
+        cx.notify();
+    }
+
+    fn advance_task(&mut self, mission: &str, task: &TaskRow, cx: &mut Context<Self>) {
+        let next = next_task_status(&task.status);
+        let store = self.store.clone();
+        let repo = self.repo_root.clone();
+        let base = self.web_url.clone();
+        let mission = mission.to_string();
+        let task_id = task.id.clone();
+        self.board_action_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let outcome = if let Some(url) = base {
+                post_board_move(&url, &mission, &task_id, next)
+            } else {
+                move_board_task_local(&repo, &mission, &task_id, next).map(|row| row)
+            };
+            let _ = this.update(cx, move |view, cx| {
+                match outcome {
+                    Ok(_) => {
+                        view.board_action_error = None;
+                        if view.web_url.is_none() {
+                            let state = collect_state(&repo);
+                            let _ = store.apply(StoreEvent::State(state));
+                        }
+                    }
+                    Err(err) => {
+                        view.board_action_error = Some(err);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn ensure_chat_loaded(&self, mission: &str, cx: &mut Context<Self>) {
@@ -246,6 +294,9 @@ impl TocDashboard {
         if key == "c" && !event.keystroke.modifiers.platform && !event.keystroke.modifiers.control {
             self.toggle_chat(cx);
         }
+        if key == "m" && !event.keystroke.modifiers.platform && !event.keystroke.modifiers.control {
+            self.toggle_telemetry(cx);
+        }
     }
 }
 
@@ -288,6 +339,7 @@ impl Render for TocDashboard {
                 palette,
                 self.theme,
                 self.chat_open,
+                self.telemetry_open,
                 cx,
             ))
             .child(controls_row(
@@ -297,6 +349,17 @@ impl Render for TocDashboard {
                 palette,
                 cx,
             ))
+            .children(if self.telemetry_open {
+                let slug = snap.selected_mission.clone().or_else(|| {
+                    mission.map(|m| m.slug.clone())
+                });
+                let strip = slug.as_ref().and_then(|s| {
+                    state.map(|st| compute_operator_telemetry(st, s, &self.repo_root))
+                });
+                vec![operator_telemetry_strip(strip.as_deref(), palette).into_any_element()]
+            } else {
+                Vec::new()
+            })
             .child(
                 div()
                     .flex()
@@ -307,6 +370,7 @@ impl Render for TocDashboard {
                         state,
                         &snap.selected_mission,
                         palette,
+                        self.board_action_error.as_deref(),
                         cx,
                     ))
                     .child(side_panel(
@@ -346,6 +410,7 @@ fn header_bar(
     palette: ThemePalette,
     theme: ThemeMode,
     chat_open: bool,
+    telemetry_open: bool,
     cx: &mut Context<TocDashboard>,
 ) -> impl IntoElement {
     let utc = state
@@ -413,6 +478,26 @@ fn header_bar(
                                 .child(format!(
                                     "Commander Chat ({})",
                                     if chat_open { "on" } else { "c" }
+                                )),
+                        )
+                        .child(
+                            div()
+                                .id("telemetry-toggle")
+                                .px_2()
+                                .py_px()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(rgb(palette.border))
+                                .bg(rgb(if telemetry_open {
+                                    palette.chip_active
+                                } else {
+                                    palette.chip_idle
+                                }))
+                                .cursor_pointer()
+                                .on_click(cx.listener(|this, _, _, cx| this.toggle_telemetry(cx)))
+                                .child(format!(
+                                    "Ops telemetry ({})",
+                                    if telemetry_open { "on" } else { "m" }
                                 )),
                         )
                         .child(div().text_color(rgb(palette.muted)).child(format!("UTC {utc}")))
@@ -571,11 +656,71 @@ fn badge(text: String, palette: ThemePalette) -> impl IntoElement {
         .child(text)
 }
 
+fn operator_telemetry_strip(
+    rows: Option<&[OperatorTelemetry]>,
+    palette: ThemePalette,
+) -> impl IntoElement {
+    div()
+        .px_4()
+        .py_2()
+        .flex()
+        .flex_wrap()
+        .gap_2()
+        .bg(rgb(palette.panel))
+        .border_b_1()
+        .border_color(rgb(palette.border))
+        .children(if let Some(rows) = rows {
+            rows.iter()
+                .map(|r| telemetry_chip(r, palette).into_any_element())
+                .collect::<Vec<_>>()
+        } else {
+            vec![div()
+                .text_xs()
+                .text_color(rgb(palette.muted))
+                .child("Select a mission to view operator telemetry.")
+                .into_any_element()]
+        })
+}
+
+fn telemetry_chip(row: &OperatorTelemetry, palette: ThemePalette) -> impl IntoElement {
+    let dot = match row.health.as_str() {
+        "active" => palette.accent,
+        "blocked" => palette.warn,
+        _ => palette.muted,
+    };
+    div()
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(palette.border))
+        .bg(rgb(palette.bg))
+        .text_xs()
+        .child(
+            div()
+                .flex()
+                .gap_2()
+                .items_center()
+                .child(
+                    div()
+                        .w(px(8.))
+                        .h(px(8.))
+                        .rounded_full()
+                        .bg(rgb(dot)),
+                )
+                .child(format!(
+                    "{} a:{} d:{} logs:{}",
+                    row.operator, row.active_tasks, row.done_tasks, row.log_lines
+                )),
+        )
+}
+
 fn main_board(
     mission: Option<&MissionRow>,
     state: Option<&TocState>,
     selected: &Option<String>,
     palette: ThemePalette,
+    board_error: Option<&str>,
     cx: &mut Context<TocDashboard>,
 ) -> impl IntoElement {
     div()
@@ -592,7 +737,16 @@ fn main_board(
                 .text_color(rgb(palette.muted))
                 .child("MISSION / TASK BOARD"),
         )
-        .child(mission_panel(mission, palette))
+        .children(if let Some(err) = board_error {
+            vec![div()
+                .text_xs()
+                .text_color(rgb(palette.warn))
+                .child(err.to_string())
+                .into_any_element()]
+        } else {
+            Vec::new()
+        })
+        .child(mission_panel(mission, palette, cx))
         .child(
             div()
                 .text_xs()
@@ -648,7 +802,11 @@ fn mission_switcher_row(
         .child(label)
 }
 
-fn mission_panel(mission: Option<&MissionRow>, palette: ThemePalette) -> impl IntoElement {
+fn mission_panel(
+    mission: Option<&MissionRow>,
+    palette: ThemePalette,
+    cx: &mut Context<TocDashboard>,
+) -> impl IntoElement {
     div()
         .bg(rgb(palette.panel))
         .border_1()
@@ -679,7 +837,7 @@ fn mission_panel(mission: Option<&MissionRow>, palette: ThemePalette) -> impl In
                     .child(m.objective.clone())
                     .into_any_element(),
                 progress_bar(m.pct, palette).into_any_element(),
-                kanban(&m.tasks, palette).into_any_element(),
+                kanban(&m.slug, &m.tasks, palette, cx).into_any_element(),
             ]
         } else {
             vec![div().child("No missions found.").into_any_element()]
@@ -702,7 +860,12 @@ fn progress_bar(pct: u32, palette: ThemePalette) -> impl IntoElement {
         )
 }
 
-fn kanban(tasks: &[TaskRow], palette: ThemePalette) -> impl IntoElement {
+fn kanban(
+    mission_slug: &str,
+    tasks: &[TaskRow],
+    palette: ThemePalette,
+    cx: &mut Context<TocDashboard>,
+) -> impl IntoElement {
     let mut todo = Vec::new();
     let mut doing = Vec::new();
     let mut done = Vec::new();
@@ -717,16 +880,18 @@ fn kanban(tasks: &[TaskRow], palette: ThemePalette) -> impl IntoElement {
         .flex()
         .gap_3()
         .mt_3()
-        .child(kanban_col("TODO", palette.todo, &todo, palette))
-        .child(kanban_col("DOING", palette.doing, &doing, palette))
-        .child(kanban_col("DONE", palette.done, &done, palette))
+        .child(kanban_col("TODO", palette.todo, mission_slug, &todo, palette, cx))
+        .child(kanban_col("DOING", palette.doing, mission_slug, &doing, palette, cx))
+        .child(kanban_col("DONE", palette.done, mission_slug, &done, palette, cx))
 }
 
 fn kanban_col(
     title: &str,
     color: u32,
+    mission_slug: &str,
     tasks: &[&TaskRow],
     palette: ThemePalette,
+    cx: &mut Context<TocDashboard>,
 ) -> impl IntoElement {
     div()
         .flex_1()
@@ -737,20 +902,46 @@ fn kanban_col(
                 .mb_1()
                 .child(title.to_string()),
         )
-        .children(tasks.iter().map(|t| task_chip(t, color, palette)))
+        .children(
+            tasks
+                .iter()
+                .map(|t| task_chip(t, color, mission_slug, palette, cx)),
+        )
 }
 
-fn task_chip(t: &TaskRow, accent: u32, palette: ThemePalette) -> impl IntoElement {
+fn task_chip(
+    t: &TaskRow,
+    accent: u32,
+    mission_slug: &str,
+    palette: ThemePalette,
+    cx: &mut Context<TocDashboard>,
+) -> impl IntoElement {
+    let mission = mission_slug.to_string();
+    let task = t.clone();
     div()
         .mb_1()
         .px_2()
         .py_1()
+        .flex()
+        .justify_between()
+        .items_center()
         .border_l_2()
         .border_color(rgb(accent))
         .bg(rgb(palette.bg))
         .rounded_sm()
         .text_xs()
         .child(format!("{} {}: {}", t.id, t.owner, t.name))
+        .child(
+            div()
+                .id(SharedString::from(format!("advance-{}-{}", mission, t.id)))
+                .px_1()
+                .cursor_pointer()
+                .text_color(rgb(palette.accent))
+                .on_click(cx.listener({
+                    move |this, _, _, cx| this.advance_task(&mission, &task, cx)
+                }))
+                .child(">"),
+        )
 }
 
 fn side_panel(
