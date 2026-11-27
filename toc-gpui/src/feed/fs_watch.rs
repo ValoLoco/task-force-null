@@ -1,3 +1,4 @@
+use crate::shutdown::ShutdownSignal;
 use crate::state::collect_state;
 use crate::store::{StoreEvent, TocStore};
 use crate::log_io::LogTailer;
@@ -6,13 +7,16 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub fn spawn_fs_watch(repo: &Path, store: Arc<TocStore>) {
+pub fn spawn_fs_watch(repo: &Path, store: Arc<TocStore>, shutdown: ShutdownSignal) {
     let repo = repo.to_path_buf();
     let store_cb = store.clone();
     std::thread::Builder::new()
         .name("tfn-toc-fs".into())
         .spawn(move || {
-            let repo = repo;
+            let _ = store_cb.apply(StoreEvent::FeedPhase {
+                phase: "filewatch".into(),
+                reconnect_secs: None,
+            });
             let _ = store_cb.apply(StoreEvent::State(collect_state(&repo)));
 
             let mut tailer = LogTailer::default();
@@ -29,7 +33,7 @@ pub fn spawn_fs_watch(repo: &Path, store: Arc<TocStore>) {
                 let _ = w.watch(&repo, RecursiveMode::Recursive);
             }
 
-            loop {
+            while !shutdown.should_stop() {
                 while rx.try_recv().is_ok() {
                     let state = collect_state(&repo);
                     let _ = store_cb.apply(StoreEvent::State(state));
@@ -40,7 +44,7 @@ pub fn spawn_fs_watch(repo: &Path, store: Arc<TocStore>) {
                         let _ = store_cb.apply(StoreEvent::LogLine(ev));
                     }
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                shutdown.sleep_or_stop(Duration::from_millis(100));
             }
         })
         .ok();

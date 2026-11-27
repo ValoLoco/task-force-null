@@ -25,6 +25,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: toc-gpui
+
       - name: cargo test (headless)
         working-directory: toc-gpui
         run: cargo test

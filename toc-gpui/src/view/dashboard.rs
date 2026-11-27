@@ -1,30 +1,30 @@
-use gpui::{
-    div, prelude::*, px, rgb, Context, IntoElement, ParentElement, Render, StatefulInteractiveElement,
-    Styled, Window,
+use crate::feed::display::{connection_badge, BadgeTone};
+use crate::filter::{
+    filter_activity_lines, mission_slugs_sorted, search_matches, OperatorChip,
 };
 use crate::store::{StoreSnapshot, TocStore};
-use crate::types::{MissionRow, status_bucket, ActivityLine, OperatorRow, StatusStrip, TaskRow, TocState};
+use crate::theme::{ThemeMode, ThemePalette};
+use crate::types::{status_bucket, ActivityLine, MissionRow, OperatorRow, StatusStrip, TaskRow, TocState};
+use gpui::{
+    div, prelude::*, px, rgb, App, Context, FocusHandle, Focusable, IntoElement, KeyDownEvent,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+};
 use std::sync::Arc;
-
-const BG: u32 = 0x0d1117;
-const PANEL: u32 = 0x161b22;
-const TEXT: u32 = 0xe6edf3;
-const MUTED: u32 = 0x8b949e;
-const ACCENT: u32 = 0x3fb950;
-const BORDER: u32 = 0x30363d;
-const DOING: u32 = 0x1565c0;
-const TODO_C: u32 = 0x5c6773;
-const DONE_C: u32 = 0x2e7d32;
-const WARN: u32 = 0xb58105;
 
 pub struct TocDashboard {
     store: Arc<TocStore>,
+    focus: FocusHandle,
     last_version: u64,
     active_log: Option<String>,
+    theme: ThemeMode,
+    operator_filter: OperatorChip,
+    search_query: String,
+    search_focused: bool,
 }
 
 impl TocDashboard {
     pub fn new(store: Arc<TocStore>, cx: &mut Context<Self>) -> Self {
+        let focus = cx.focus_handle();
         let store_bg = store.clone();
         cx.spawn(async move |this, cx| {
             let mut prev = store_bg.version();
@@ -42,14 +42,33 @@ impl TocDashboard {
         .detach();
         Self {
             store,
+            focus,
             last_version: 0,
             active_log: None,
+            theme: ThemeMode::default(),
+            operator_filter: OperatorChip::default(),
+            search_query: String::new(),
+            search_focused: false,
         }
     }
 
     fn snap(&mut self) -> StoreSnapshot {
         let snap = self.store.snapshot();
         self.last_version = snap.version;
+        if let Some(ref slug) = snap.selected_mission {
+            if self.active_log.is_none() {
+                if let Some(st) = snap.state.as_ref() {
+                    let paths: Vec<(String, String)> = st
+                        .operator_logs
+                        .iter()
+                        .map(|m| (m.mission.clone(), m.path.clone()))
+                        .collect();
+                    if let Some(path) = crate::filter::default_log_for_mission(slug, &paths) {
+                        self.active_log = Some(path);
+                    }
+                }
+            }
+        }
         if self.active_log.is_none() {
             if let Some(ref state) = snap.state {
                 if let Some(first) = state.operator_logs.first() {
@@ -59,24 +78,64 @@ impl TocDashboard {
         }
         snap
     }
+
+    fn palette(&self) -> ThemePalette {
+        self.theme.palette()
+    }
+
+    fn on_mission_select(&mut self, slug: String, cx: &mut Context<Self>) {
+        self.store.set_selected_mission(Some(slug.clone()));
+        if let Some(st) = self.store.snapshot().state {
+            let paths: Vec<(String, String)> = st
+                .operator_logs
+                .iter()
+                .map(|m| (m.mission.clone(), m.path.clone()))
+                .collect();
+            self.active_log = crate::filter::default_log_for_mission(&slug, &paths);
+        }
+        cx.notify();
+    }
+
+    fn handle_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        let key = event.keystroke.key.as_str();
+        if self.search_focused {
+            if key == "backspace" {
+                self.search_query.pop();
+                cx.notify();
+                return;
+            }
+            if key == "escape" {
+                self.search_focused = false;
+                cx.notify();
+                return;
+            }
+            if let Some(ch) = event.keystroke.key_char.as_deref() {
+                if ch.len() == 1 && !event.keystroke.modifiers.platform && !event.keystroke.modifiers.control {
+                    self.search_query.push_str(ch);
+                    cx.notify();
+                }
+            }
+            return;
+        }
+        if key == "t" && !event.keystroke.modifiers.platform && !event.keystroke.modifiers.control {
+            self.theme = self.theme.toggle();
+            cx.notify();
+        }
+    }
+}
+
+impl Focusable for TocDashboard {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus.clone()
+    }
 }
 
 impl Render for TocDashboard {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let snap = self.snap();
         let state = snap.state.as_ref();
-
-        let (utc, feed_pill, feed_color) = if let Some(st) = state {
-            let pill = snap.feed_status.clone();
-            let color = match pill.as_str() {
-                "live" => ACCENT,
-                "connecting" | "reconnecting" | "starting" => WARN,
-                _ => MUTED,
-            };
-            (st.status_strip.utc.clone(), pill, color)
-        } else {
-            ("--".into(), "loading".into(), MUTED)
-        };
+        let palette = self.palette();
+        let badge = connection_badge(&snap.feed_mode, &snap.feed_phase, snap.reconnect_secs);
 
         let mission = state.and_then(|st| {
             if let Some(slug) = &snap.selected_mission {
@@ -93,35 +152,65 @@ impl Render for TocDashboard {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(BG))
-            .text_color(rgb(TEXT))
+            .bg(rgb(palette.bg))
+            .text_color(rgb(palette.text))
             .text_sm()
-            .child(header_bar(&utc, &feed_pill, feed_color, state))
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(|this, event, _, cx| this.handle_key(event, cx)))
+            .child(header_bar(state, &badge, palette, self.theme, cx))
+            .child(controls_row(
+                self.operator_filter,
+                &self.search_query,
+                self.search_focused,
+                palette,
+                cx,
+            ))
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .overflow_hidden()
-                    .child(main_board(mission, state))
-                    .child(side_panel(&snap, &mut self.active_log)),
+                    .child(main_board(
+                        mission,
+                        state,
+                        &snap.selected_mission,
+                        palette,
+                        cx,
+                    ))
+                    .child(side_panel(
+                        &snap,
+                        &mut self.active_log,
+                        self.operator_filter,
+                        &self.search_query,
+                        palette,
+                    )),
             )
     }
 }
 
 fn header_bar(
-    utc: &str,
-    feed: &str,
-    feed_color: u32,
     state: Option<&TocState>,
+    badge: &crate::feed::display::ConnectionBadge,
+    palette: ThemePalette,
+    theme: ThemeMode,
+    cx: &mut Context<TocDashboard>,
 ) -> impl IntoElement {
+    let utc = state
+        .map(|s| s.status_strip.utc.clone())
+        .unwrap_or_else(|| "--".into());
+    let feed_color = match badge.tone {
+        BadgeTone::Live => palette.accent,
+        BadgeTone::Warn => palette.warn,
+        BadgeTone::Muted => palette.muted,
+    };
     let strip = state.map(|s| &s.status_strip);
     div()
         .w_full()
         .px_4()
         .py_3()
-        .bg(rgb(PANEL))
+        .bg(rgb(palette.panel))
         .border_b_1()
-        .border_color(rgb(BORDER))
+        .border_color(rgb(palette.border))
         .child(
             div()
                 .flex()
@@ -138,16 +227,31 @@ fn header_bar(
                         .flex()
                         .gap_2()
                         .items_center()
-                        .child(div().text_color(rgb(MUTED)).child(format!("UTC {utc}")))
+                        .child(
+                            div()
+                                .id("theme-toggle")
+                                .px_2()
+                                .py_px()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(rgb(palette.border))
+                                .cursor_pointer()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.theme = this.theme.toggle();
+                                    cx.notify();
+                                }))
+                                .child(format!("Theme: {} (t)", theme.toggle_label())),
+                        )
+                        .child(div().text_color(rgb(palette.muted)).child(format!("UTC {utc}")))
                         .child(
                             div()
                                 .px_2()
                                 .py_px()
                                 .rounded_full()
                                 .bg(rgb(feed_color))
-                                .text_color(rgb(TEXT))
+                                .text_color(rgb(palette.text))
                                 .text_xs()
-                                .child(feed.to_uppercase()),
+                                .child(badge.label.clone()),
                         ),
                 ),
         )
@@ -157,44 +261,139 @@ fn header_bar(
                 .flex_wrap()
                 .gap_2()
                 .mt_2()
-                .children(status_badges(st))
+                .children(status_badges(st, palette))
         } else {
             div().child("")
         })
 }
 
-fn status_badges(st: &StatusStrip) -> Vec<impl IntoElement> {
+fn controls_row(
+    selected: OperatorChip,
+    search: &str,
+    search_focused: bool,
+    palette: ThemePalette,
+    cx: &mut Context<TocDashboard>,
+) -> impl IntoElement {
+    div()
+        .px_4()
+        .py_2()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .bg(rgb(palette.panel))
+        .border_b_1()
+        .border_color(rgb(palette.border))
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_1()
+                .children(OperatorChip::ALL.iter().map(|chip| {
+                    let active = *chip == selected;
+                    let label = chip.label();
+                    div()
+                        .id(label)
+                        .px_2()
+                        .py_px()
+                        .rounded_md()
+                        .cursor_pointer()
+                        .bg(rgb(if active {
+                            palette.chip_active
+                        } else {
+                            palette.chip_idle
+                        }))
+                        .border_1()
+                        .border_color(rgb(palette.border))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.operator_filter = *chip;
+                            cx.notify();
+                        }))
+                        .child(label.to_string())
+                })),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(palette.muted))
+                        .child("LOG SEARCH"),
+                )
+                .child(
+                    div()
+                        .id("log-search")
+                        .flex_1()
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(rgb(if search_focused {
+                            palette.chip_active
+                        } else {
+                            palette.border
+                        }))
+                        .bg(rgb(palette.bg))
+                        .cursor_text()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.search_focused = true;
+                            cx.notify();
+                        }))
+                        .child(if search.is_empty() {
+                            "Type to filter logs (Esc to blur)".to_string()
+                        } else {
+                            search.to_string()
+                        }),
+                ),
+        )
+}
+
+fn status_badges(st: &StatusStrip, palette: ThemePalette) -> Vec<impl IntoElement> {
     let mat = &st.maturity;
     vec![
-        badge(format!(
-            "blockers {}",
-            if st.delegation.blockers { "ON" } else { "OFF" }
-        )),
-        badge(format!(
-            "external {}",
-            if st.delegation.external { "ON" } else { "OFF" }
-        )),
-        badge(format!(
-            "autonomous {}",
-            if st.autonomous { "ON" } else { "OFF" }
-        )),
-        badge(format!("AARs {}/{}", mat.aar_count, mat.min_aars)),
-        badge(format!(
-            "missions {}/{}",
-            mat.completed_missions, mat.min_missions
-        )),
-        badge(mat.pushback.clone()),
+        badge(
+            format!(
+                "blockers {}",
+                if st.delegation.blockers { "ON" } else { "OFF" }
+            ),
+            palette,
+        ),
+        badge(
+            format!(
+                "external {}",
+                if st.delegation.external { "ON" } else { "OFF" }
+            ),
+            palette,
+        ),
+        badge(
+            format!(
+                "autonomous {}",
+                if st.autonomous { "ON" } else { "OFF" }
+            ),
+            palette,
+        ),
+        badge(format!("AARs {}/{}", mat.aar_count, mat.min_aars), palette),
+        badge(
+            format!(
+                "missions {}/{}",
+                mat.completed_missions, mat.min_missions
+            ),
+            palette,
+        ),
+        badge(mat.pushback.clone(), palette),
     ]
 }
 
-fn badge(text: String) -> impl IntoElement {
+fn badge(text: String, palette: ThemePalette) -> impl IntoElement {
     div()
         .px_2()
         .py_px()
         .rounded_md()
         .border_1()
-        .border_color(rgb(BORDER))
-        .bg(rgb(BG))
+        .border_color(rgb(palette.border))
+        .bg(rgb(palette.bg))
         .text_xs()
         .child(text)
 }
@@ -202,6 +401,9 @@ fn badge(text: String) -> impl IntoElement {
 fn main_board(
     mission: Option<&MissionRow>,
     state: Option<&TocState>,
+    selected: &Option<String>,
+    palette: ThemePalette,
+    cx: &mut Context<TocDashboard>,
 ) -> impl IntoElement {
     div()
         .flex_1()
@@ -214,34 +416,70 @@ fn main_board(
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(MUTED))
+                .text_color(rgb(palette.muted))
                 .child("MISSION / TASK BOARD"),
         )
-        .child(mission_panel(mission))
+        .child(mission_panel(mission, palette))
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(MUTED))
+                .text_color(rgb(palette.muted))
                 .mt_2()
-                .child("ALL MISSIONS"),
+                .child("MISSION SWITCHER"),
         )
         .children(
             state
                 .map(|s| {
-                    s.missions
-                        .iter()
-                        .map(mission_summary_row)
+                    mission_slugs_sorted(&s.missions)
+                        .into_iter()
+                        .map(|slug| {
+                            let row = s.missions.iter().find(|m| m.slug == slug);
+                            let is_selected = selected.as_deref() == Some(slug.as_str());
+                            mission_switcher_row(slug, row, is_selected, palette, cx)
+                        })
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default(),
         )
 }
 
-fn mission_panel(mission: Option<&MissionRow>) -> impl IntoElement {
+fn mission_switcher_row(
+    slug: String,
+    row: Option<&MissionRow>,
+    active: bool,
+    palette: ThemePalette,
+    cx: &mut Context<TocDashboard>,
+) -> impl IntoElement {
+    let pct = row.map(|m| m.pct).unwrap_or(0);
+    let status = row.map(|m| if m.active { "ACTIVE" } else { "idle" }).unwrap_or("?");
+    let row_id = SharedString::from(format!("mission-{slug}"));
+    let label = format!("{slug} [{status}] {pct}%");
     div()
-        .bg(rgb(PANEL))
+        .id(row_id)
+        .px_3()
+        .py_2()
         .border_1()
-        .border_color(rgb(BORDER))
+        .border_color(rgb(if active {
+            palette.chip_active
+        } else {
+            palette.border
+        }))
+        .rounded_md()
+        .bg(rgb(if active { palette.chip_idle } else { palette.panel }))
+        .mb_2()
+        .cursor_pointer()
+        .on_click(cx.listener({
+            let slug = slug.clone();
+            move |this, _, _, cx| this.on_mission_select(slug.clone(), cx)
+        }))
+        .child(label)
+}
+
+fn mission_panel(mission: Option<&MissionRow>, palette: ThemePalette) -> impl IntoElement {
+    div()
+        .bg(rgb(palette.panel))
+        .border_1()
+        .border_color(rgb(palette.border))
         .rounded_md()
         .p_4()
         .children(if let Some(m) = mission {
@@ -258,57 +496,40 @@ fn mission_panel(mission: Option<&MissionRow>) -> impl IntoElement {
                     )
                     .child(
                         div()
-                            .text_color(rgb(MUTED))
+                            .text_color(rgb(palette.muted))
                             .child(format!("{}% ({}/{})", m.pct, m.done, m.total)),
                     )
                     .into_any_element(),
                 div()
-                    .text_color(rgb(MUTED))
+                    .text_color(rgb(palette.muted))
                     .mt_1()
                     .child(m.objective.clone())
                     .into_any_element(),
-                progress_bar(m.pct).into_any_element(),
-                kanban(&m.tasks).into_any_element(),
+                progress_bar(m.pct, palette).into_any_element(),
+                kanban(&m.tasks, palette).into_any_element(),
             ]
         } else {
             vec![div().child("No missions found.").into_any_element()]
         })
 }
 
-fn mission_summary_row(m: &MissionRow) -> impl IntoElement {
-    div()
-        .px_3()
-        .py_2()
-        .border_1()
-        .border_color(rgb(BORDER))
-        .rounded_md()
-        .bg(rgb(PANEL))
-        .mb_2()
-        .child(format!(
-            "{} [{}] {}%",
-            m.slug,
-            if m.active { "ACTIVE" } else { "idle" },
-            m.pct
-        ))
-}
-
-fn progress_bar(pct: u32) -> impl IntoElement {
+fn progress_bar(pct: u32, palette: ThemePalette) -> impl IntoElement {
     div()
         .mt_2()
         .h(px(6.))
         .w_full()
-        .bg(rgb(BORDER))
+        .bg(rgb(palette.border))
         .rounded_md()
         .overflow_hidden()
         .child(
             div()
                 .h_full()
                 .w(gpui::relative((pct as f32) / 100.0))
-                .bg(rgb(ACCENT)),
+                .bg(rgb(palette.accent)),
         )
 }
 
-fn kanban(tasks: &[TaskRow]) -> impl IntoElement {
+fn kanban(tasks: &[TaskRow], palette: ThemePalette) -> impl IntoElement {
     let mut todo = Vec::new();
     let mut doing = Vec::new();
     let mut done = Vec::new();
@@ -323,36 +544,37 @@ fn kanban(tasks: &[TaskRow]) -> impl IntoElement {
         .flex()
         .gap_3()
         .mt_3()
-        .child(kanban_col("TODO", TODO_C, &todo))
-        .child(kanban_col("DOING", DOING, &doing))
-        .child(kanban_col("DONE", DONE_C, &done))
+        .child(kanban_col("TODO", palette.todo, &todo, palette))
+        .child(kanban_col("DOING", palette.doing, &doing, palette))
+        .child(kanban_col("DONE", palette.done, &done, palette))
 }
 
 fn kanban_col(
     title: &str,
     color: u32,
     tasks: &[&TaskRow],
+    palette: ThemePalette,
 ) -> impl IntoElement {
     div()
         .flex_1()
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(MUTED))
+                .text_color(rgb(palette.muted))
                 .mb_1()
                 .child(title.to_string()),
         )
-        .children(tasks.iter().map(|t| task_chip(t, color)))
+        .children(tasks.iter().map(|t| task_chip(t, color, palette)))
 }
 
-fn task_chip(t: &TaskRow, accent: u32) -> impl IntoElement {
+fn task_chip(t: &TaskRow, accent: u32, palette: ThemePalette) -> impl IntoElement {
     div()
         .mb_1()
         .px_2()
         .py_1()
         .border_l_2()
         .border_color(rgb(accent))
-        .bg(rgb(BG))
+        .bg(rgb(palette.bg))
         .rounded_sm()
         .text_xs()
         .child(format!("{} {}: {}", t.id, t.owner, t.name))
@@ -361,25 +583,31 @@ fn task_chip(t: &TaskRow, accent: u32) -> impl IntoElement {
 fn side_panel(
     snap: &StoreSnapshot,
     active_log: &mut Option<String>,
+    operator_filter: OperatorChip,
+    search_query: &str,
+    palette: ThemePalette,
 ) -> impl IntoElement {
     let state = snap.state.as_ref();
+    let filtered: Vec<&ActivityLine> =
+        filter_activity_lines(&snap.activity, operator_filter, search_query);
+    let recent: Vec<_> = filtered.iter().rev().take(48).collect();
     div()
         .w(px(380.))
         .h_full()
         .flex()
         .flex_col()
         .border_l_1()
-        .border_color(rgb(BORDER))
-        .bg(rgb(PANEL))
+        .border_color(rgb(palette.border))
+        .bg(rgb(palette.panel))
         .child(
             div()
                 .p_3()
                 .border_b_1()
-                .border_color(rgb(BORDER))
+                .border_color(rgb(palette.border))
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(MUTED))
+                        .text_color(rgb(palette.muted))
                         .child("SQUAD ROSTER"),
                 )
                 .children(
@@ -387,7 +615,7 @@ fn side_panel(
                         .map(|s| {
                             s.operators
                                 .iter()
-                                .map(roster_row)
+                                .map(|op| roster_row(op, operator_filter, palette))
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default(),
@@ -397,14 +625,14 @@ fn side_panel(
             div()
                 .p_3()
                 .border_b_1()
-                .border_color(rgb(BORDER))
+                .border_color(rgb(palette.border))
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(MUTED))
+                        .text_color(rgb(palette.muted))
                         .child("MODEL ROUTING"),
                 )
-                .child(routing_block(state)),
+                .child(routing_block(state, palette)),
         )
         .child(
             div()
@@ -416,24 +644,25 @@ fn side_panel(
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(MUTED))
+                        .text_color(rgb(palette.muted))
                         .mb_2()
                         .child("OPERATOR ACTIVITY"),
                 )
-                .child(activity_feed(&snap.activity))
+                .child(activity_feed(&recent, palette))
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(MUTED))
+                        .text_color(rgb(palette.muted))
                         .mt_3()
                         .mb_1()
                         .child("LOG TAIL"),
                 )
-                .child(log_tail(snap, active_log)),
+                .child(log_tail(snap, active_log, operator_filter, search_query, palette)),
         )
 }
 
-fn roster_row(op: &OperatorRow) -> impl IntoElement {
+fn roster_row(op: &OperatorRow, filter: OperatorChip, palette: ThemePalette) -> impl IntoElement {
+    let highlighted = filter.matches_operator_id(&op.id);
     let task_summary = if op.tasks.is_empty() {
         "(no owned tasks)".to_string()
     } else {
@@ -446,21 +675,32 @@ fn roster_row(op: &OperatorRow) -> impl IntoElement {
     };
     div()
         .mb_2()
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .bg(rgb(if highlighted {
+            palette.chip_idle
+        } else {
+            palette.panel
+        }))
         .border_l_2()
-        .border_color(rgb(ACCENT))
-        .pl_2()
+        .border_color(rgb(if highlighted {
+            palette.chip_active
+        } else {
+            palette.accent
+        }))
         .child(
             div()
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .child(op.id.clone()),
         )
-        .child(div().text_color(rgb(MUTED)).text_xs().child(op.title.clone()))
+        .child(div().text_color(rgb(palette.muted)).text_xs().child(op.title.clone()))
         .child(div().text_xs().child(task_summary))
 }
 
-fn routing_block(state: Option<&TocState>) -> impl IntoElement {
+fn routing_block(state: Option<&TocState>, _palette: ThemePalette) -> impl IntoElement {
     let Some(st) = state else {
-        return div().text_xs().child("loading...");
+        return div().text_xs().child("loading...").into_any_element();
     };
     let r = &st.routing;
     let inv = if r.inventory.is_empty() {
@@ -488,41 +728,63 @@ fn routing_block(state: Option<&TocState>) -> impl IntoElement {
         .child(format!("harness: {}", r.harness))
         .child(div().mt_1().child(format!("inventory: {inv}")))
         .child(div().mt_1().child(format!("bindings: {binds}")))
+        .into_any_element()
 }
 
-fn activity_feed(lines: &[ActivityLine]) -> impl IntoElement {
-    let recent: Vec<_> = lines.iter().rev().take(24).collect();
+fn activity_feed(lines: &[&&ActivityLine], _palette: ThemePalette) -> impl IntoElement {
     div()
         .id("activity-feed")
         .flex_1()
         .overflow_y_scroll()
         .text_xs()
-        .children(recent.iter().map(|l| {
-            div().mb_1().child(format!("[{}] {}", l.utc, l.text))
+        .children(lines.iter().map(|l| {
+            div()
+                .mb_1()
+                .child(format!("[{}] {}", l.utc, l.text))
         }))
 }
 
-fn log_tail(snap: &StoreSnapshot, active_log: &Option<String>) -> impl IntoElement {
+fn log_tail(
+    snap: &StoreSnapshot,
+    active_log: &Option<String>,
+    operator_filter: OperatorChip,
+    search_query: &str,
+    palette: ThemePalette,
+) -> impl IntoElement {
     let key = active_log.clone().unwrap_or_default();
-    let body = snap
-        .log_buffers
-        .get(&key)
-        .cloned()
-        .unwrap_or_else(|| {
-            if key.is_empty() {
-                "Waiting for operator logs under missions/*/logs/*.log".into()
-            } else {
-                "(no lines yet)".into()
-            }
-        });
+    let op_from_path = key
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(".log")
+        .to_string();
+    let body = if let Some(ring) = snap.log_rings.get(&key) {
+        let filtered: Vec<String> = ring
+            .lines()
+            .filter(|line| {
+                operator_filter.matches_operator_id(&op_from_path)
+                    && search_matches(line, search_query)
+            })
+            .map(|s| s.to_string())
+            .collect();
+        if filtered.is_empty() {
+            "(no matching lines)".into()
+        } else {
+            filtered.join("\n")
+        }
+    } else if key.is_empty() {
+        "Waiting for operator logs under missions/*/logs/*.log".into()
+    } else {
+        "(no lines yet)".into()
+    };
     div()
         .id("log-tail")
         .h(px(140.))
         .overflow_y_scroll()
         .p_2()
-        .bg(rgb(BG))
+        .bg(rgb(palette.bg))
         .border_1()
-        .border_color(rgb(BORDER))
+        .border_color(rgb(palette.border))
         .rounded_md()
         .text_xs()
         .child(body)
