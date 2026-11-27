@@ -77,8 +77,24 @@ if d['missions']:
     assert 'tasks' in d['missions'][0]
 " "$STATE"
 
-SSE_HEAD="$(curl -sS --max-time 3 "$URL/events" 2>/dev/null | head -c 4096 || true)"
-echo "$SSE_HEAD" | grep -q 'event: state' || { echo "FAIL: SSE state frame missing" >&2; exit 1; }
+LOG_MARK="tfn_sse_log_probe_$$"
+SSE_LOG="$TMP/sse-capture.txt"
+: >"$SSE_LOG"
+curl -sS -N --max-time 20 "$URL/events" >>"$SSE_LOG" 2>/dev/null &
+SSE_PID=$!
+sleep 0.6
+grep -q 'event: state' "$SSE_LOG" || { echo "FAIL: SSE state frame missing" >&2; cat "$SSE_LOG" >&2; exit 1; }
+"${ROOT}/scripts/op-log.sh" --repo-root "$TMP" setup-mission lead -- printf '%s\n' "$LOG_MARK"
+for _ in $(seq 1 60); do
+  if grep -q 'event: log' "$SSE_LOG" && grep -qF "$LOG_MARK" "$SSE_LOG"; then
+    break
+  fi
+  sleep 0.15
+done
+kill -TERM "$SSE_PID" 2>/dev/null || true
+wait "$SSE_PID" 2>/dev/null || true
+grep -q 'event: log' "$SSE_LOG" || { echo "FAIL: SSE log event missing" >&2; cat "$SSE_LOG" >&2; exit 1; }
+grep -qF "$LOG_MARK" "$SSE_LOG" || { echo "FAIL: SSE log payload missing marker" >&2; cat "$SSE_LOG" >&2; exit 1; }
 
 CODE="$(curl -s -o /dev/null -w '%{http_code}' "$URL/.env")"
 [[ "$CODE" == "404" ]] || { echo "FAIL: expected 404 for /.env got $CODE" >&2; exit 1; }

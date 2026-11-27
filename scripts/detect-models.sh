@@ -8,8 +8,11 @@ ENV_TARGET=""
 AGENTS_FILE="${REPO_ROOT}/AGENTS.md"
 MODELS_FILE="${REPO_ROOT}/brain/models.md"
 
+HARNESS_OVERRIDE=""
+
 usage() {
-  echo "Usage: $0 [--slug SLUG] [--env-file PATH] [--repo-root PATH]"
+  echo "Usage: $0 [--slug SLUG] [--env-file PATH] [--repo-root PATH] [--harness NAME]"
+  echo "Env: TFN_HARNESS (overrides automatic harness detection)"
   exit 1
 }
 
@@ -18,6 +21,7 @@ while [[ $# -gt 0 ]]; do
     --slug) SLUG="$2"; shift 2 ;;
     --env-file) ENV_TARGET="$2"; shift 2 ;;
     --repo-root) REPO_ROOT="$2"; MODELS_FILE="${REPO_ROOT}/brain/models.md"; AGENTS_FILE="${REPO_ROOT}/AGENTS.md"; shift 2 ;;
+    --harness) HARNESS_OVERRIDE="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) echo "unknown arg: $1" >&2; usage ;;
   esac
@@ -59,6 +63,14 @@ fi
 mkdir -p "${REPO_ROOT}/brain"
 
 detect_harness() {
+  if [[ -n "${TFN_HARNESS:-}" ]]; then
+    echo "$TFN_HARNESS"
+    return 0
+  fi
+  if [[ -n "$HARNESS_OVERRIDE" ]]; then
+    echo "$HARNESS_OVERRIDE"
+    return 0
+  fi
   if [[ -n "${CURSOR_TRACE_ID:-}" || -n "${CURSOR_AGENT:-}" ]]; then
     echo "cursor"
   elif command -v pi >/dev/null 2>&1; then

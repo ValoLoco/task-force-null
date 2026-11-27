@@ -35,7 +35,8 @@ Options:
   --mission-slug SLUG    Mission folder name for deploy-squad.sh
   --install-harness NAME Install hermes or pi if missing (non-interactive)
 
-Env: SETUP_MISSION_SLUG, SETUP_HARNESS, SETUP_BASH_ONLY=1, LOCAL_LLM_DIR, INKLING_MODEL_URL
+Env: SETUP_MISSION_SLUG, SETUP_HARNESS, SETUP_BASH_ONLY=1, LOCAL_LLM_DIR, INKLING_MODEL_URL,
+     TFN_LLM_PROBE_URL, TFN_LLM_PROBE_HOST, TFN_LLM_PROBE_PORT, TFN_HARNESS
 Windows Git Bash: prefers delegation to scripts/setup.ps1 (set SETUP_BASH_ONLY=1 to stay in bash).
 EOF
   exit 1
@@ -58,6 +59,31 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "${SETUP_HARNESS:-}" && -z "$CHOSEN_HARNESS" ]] && CHOSEN_HARNESS="$SETUP_HARNESS"
+[[ -n "${TFN_HARNESS:-}" && -z "$CHOSEN_HARNESS" ]] && CHOSEN_HARNESS="$TFN_HARNESS"
+
+tfn_llm_probe_host() {
+  printf '%s' "${TFN_LLM_PROBE_HOST:-127.0.0.1}"
+}
+
+tfn_llm_probe_port() {
+  printf '%s' "${TFN_LLM_PROBE_PORT:-8080}"
+}
+
+tfn_llm_probe_health_url() {
+  if [[ -n "${TFN_LLM_PROBE_URL:-}" ]]; then
+    printf '%s' "$TFN_LLM_PROBE_URL"
+    return
+  fi
+  printf 'http://%s:%s/health' "$(tfn_llm_probe_host)" "$(tfn_llm_probe_port)"
+}
+
+tfn_llm_probe_models_url() {
+  printf 'http://%s:%s/v1/models' "$(tfn_llm_probe_host)" "$(tfn_llm_probe_port)"
+}
+
+tfn_llm_probe_display_base() {
+  printf 'http://%s:%s' "$(tfn_llm_probe_host)" "$(tfn_llm_probe_port)"
+}
 
 log() { printf '[setup] %s\n' "$*" >&2; }
 
@@ -312,8 +338,8 @@ try_install_llama() {
 
 llm_healthy() {
   if command -v curl >/dev/null 2>&1; then
-    curl -fsS --max-time 2 "http://127.0.0.1:8080/health" >/dev/null 2>&1 && return 0
-    curl -fsS --max-time 2 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1 && return 0
+    probe_url "$(tfn_llm_probe_health_url)" && return 0
+    probe_url "$(tfn_llm_probe_models_url)" && return 0
   fi
   return 1
 }
@@ -338,8 +364,8 @@ first_gguf() {
 }
 
 detect_running_server() {
-  if probe_url "http://127.0.0.1:8080/v1/models" || probe_url "http://127.0.0.1:8080/health"; then
-    printf '%s\n' "http://127.0.0.1:8080|llama-server / Inkling"
+  if probe_url "$(tfn_llm_probe_models_url)" || probe_url "$(tfn_llm_probe_health_url)"; then
+    printf '%s\n' "$(tfn_llm_probe_display_base)|llama-server / Inkling"
     return 0
   fi
   if probe_url "http://127.0.0.1:11434/api/tags" || probe_url "http://127.0.0.1:11434/v1/models"; then
@@ -515,7 +541,11 @@ bootstrap_deploy() {
   [[ -z "$MISSION_SLUG" ]] && MISSION_SLUG="$DEFAULT_SLUG"
   source_env_safe
   run_in_repo bash ./scripts/sync-armory.sh --allow-offline
-  run_in_repo env MISSION_SLUG="$MISSION_SLUG" bash ./scripts/detect-models.sh --slug "$MISSION_SLUG"
+  local dm_args=(env MISSION_SLUG="$MISSION_SLUG")
+  [[ -n "$CHOSEN_HARNESS" ]] && dm_args+=(TFN_HARNESS="$CHOSEN_HARNESS")
+  dm_args+=(bash ./scripts/detect-models.sh --slug "$MISSION_SLUG")
+  [[ -n "$CHOSEN_HARNESS" ]] && dm_args+=(--harness "$CHOSEN_HARNESS")
+  run_in_repo "${dm_args[@]}"
   if [[ -d "${REPO_ROOT}/missions/${MISSION_SLUG}" ]]; then
     log "mission ${MISSION_SLUG} already exists; skipping deploy-squad.sh"
   else
